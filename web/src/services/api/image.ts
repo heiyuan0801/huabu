@@ -4,6 +4,7 @@ import { buildApiUrl, resolveModelRequestConfig, type AiConfig, type ModelChanne
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
+import { buildGrokImageReference, isDefaultOpenAIBaseUrl, isXaiBaseUrl } from "@/lib/grok-video";
 import { imageToDataUrl } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
 
@@ -68,8 +69,9 @@ type ResponseStreamState = { buffer: string; text: string; payload?: ResponseApi
 
 type ImageApiResponse = {
     data?: Array<Record<string, unknown>>;
-    error?: { message?: string };
-    code?: number;
+    error?: { message?: string } | string;
+    code?: number | string;
+    message?: string;
     msg?: string;
 };
 type GeminiPart = {
@@ -194,6 +196,9 @@ function parseImagePayload(payload: ImageApiResponse) {
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || "请求失败");
     }
+    if (payload.error) {
+        throw new Error(typeof payload.error === "string" ? payload.error : payload.error.message || payload.message || "请求失败");
+    }
     const images =
         payload.data
             ?.map(resolveImageDataUrl)
@@ -209,9 +214,10 @@ function parseImagePayload(payload: ImageApiResponse) {
 
 function readAxiosError(error: unknown, fallback: string) {
     if (axios.isCancel(error)) return "请求已取消";
-    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
+    if (axios.isAxiosError<{ error?: { message?: string } | string; message?: string; msg?: string; code?: number | string }>(error)) {
         const responseData = error.response?.data;
-        return responseData?.msg || responseData?.error?.message || readStatusError(error.response?.status, fallback);
+        const responseError = typeof responseData?.error === "string" ? responseData.error : responseData?.error?.message;
+        return responseData?.msg || responseError || responseData?.message || readStatusError(error.response?.status, fallback);
     }
     if (error instanceof DOMException && error.name === "AbortError") return "请求已取消";
     return error instanceof Error ? error.message : fallback;
@@ -607,12 +613,65 @@ function parseGeminiImagePayload(payload: GeminiPayload) {
     return images;
 }
 
+function isGrokImageConfig(config: Pick<AiConfig, "model" | "imageModel" | "baseUrl">) {
+    return isGrokImageModel(config.model || config.imageModel) || isXaiBaseUrl(config.baseUrl);
+}
+
+function isGrokImageModel(model: string) {
+    const value = model.toLowerCase();
+    return value.includes("grok") && value.includes("image");
+}
+
+function assertGrokImageConfig(config: AiConfig) {
+    if (isDefaultOpenAIBaseUrl(config.baseUrl)) throw new Error("Grok 图片生成请将该模型所在渠道的 Base URL 配置为 https://api.x.ai，或使用自己的 xAI 兼容代理地址");
+}
+
+async function requestGrokGeneration(config: AiConfig, prompt: string, n: number, options?: RequestOptions) {
+    assertGrokImageConfig(config);
+    const response = await axios.post<ImageApiResponse>(
+        aiApiUrl(config, "/images/generations"),
+        {
+            model: config.model,
+            prompt: withSystemPrompt(config, prompt),
+            n,
+            response_format: "url",
+        },
+        { headers: aiHeaders(config, "application/json"), signal: options?.signal },
+    );
+    return parseImagePayload(response.data);
+}
+
+async function requestGrokEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, options?: RequestOptions) {
+    assertGrokImageConfig(config);
+    if (mask) throw new Error("Grok 图片编辑暂不支持蒙版");
+    if (!references.length) throw new Error("Grok 图片编辑需要一张参考图");
+    if (references.length > 1) throw new Error("Grok 图片编辑暂只支持 1 张参考图");
+    const image = await buildGrokImageReference(references[0]);
+    const response = await axios.post<ImageApiResponse>(
+        aiApiUrl(config, "/images/edits"),
+        {
+            model: config.model,
+            prompt: withSystemPrompt(config, prompt),
+            image: { ...image, type: "image_url" },
+        },
+        { headers: aiHeaders(config, "application/json"), signal: options?.signal },
+    );
+    return parseImagePayload(response.data);
+}
+
 export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     if (requestConfig.apiFormat === "gemini") {
         try {
             return await requestGeminiImages(requestConfig, prompt, [], n, options);
+        } catch (error) {
+            throw new Error(readAxiosError(error, "请求失败"));
+        }
+    }
+    if (isGrokImageConfig(requestConfig)) {
+        try {
+            return await requestGrokGeneration(requestConfig, prompt, n, options);
         } catch (error) {
             throw new Error(readAxiosError(error, "请求失败"));
         }
@@ -651,6 +710,13 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         if (mask) throw new Error("Gemini 调用格式暂不支持蒙版编辑");
         try {
             return await requestGeminiImages(requestConfig, requestPrompt, references, n, options);
+        } catch (error) {
+            throw new Error(readAxiosError(error, "请求失败"));
+        }
+    }
+    if (isGrokImageConfig(requestConfig)) {
+        try {
+            return await requestGrokEdit(requestConfig, requestPrompt, references, mask, options);
         } catch (error) {
             throw new Error(readAxiosError(error, "请求失败"));
         }

@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Music2, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
+import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Segmented, Tag, Typography } from "antd";
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
@@ -13,12 +13,13 @@ import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
+import { isGrokVideoConfig, isGrokVideoModel, normalizeGrokDuration, normalizeGrokVideoMode } from "@/lib/grok-video";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
-import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionLabel, modelOptionName, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -62,7 +63,7 @@ type GenerationLog = {
     error?: string;
 };
 
-type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "size" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark">;
+type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "size" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "grokVideoMode">;
 
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
@@ -343,6 +344,7 @@ export default function VideoPage() {
         if (log.config.videoSeconds) updateConfig("videoSeconds", log.config.videoSeconds);
         if (log.config.videoGenerateAudio) updateConfig("videoGenerateAudio", log.config.videoGenerateAudio);
         if (log.config.videoWatermark) updateConfig("videoWatermark", log.config.videoWatermark);
+        if (log.config.grokVideoMode) updateConfig("grokVideoMode", log.config.grokVideoMode);
         setResults(log.status === "生成中" ? [{ id: log.id, status: "pending" }] : log.video ? [{ id: log.video.id, status: "success", video: log.video }] : [{ id: log.id, status: "failed", error: log.error || "生成失败" }]);
     };
 
@@ -511,7 +513,7 @@ export default function VideoPage() {
             <Drawer title="生成记录" placement="bottom" size="large" open={logsOpen} onClose={() => setLogsOpen(false)}>
                 <LogPanel logs={logs} selectedLogIds={selectedLogIds} activeLogId={previewLog?.id} onSelectedLogIdsChange={setSelectedLogIds} onCreateSession={createSession} onDeleteSelected={() => setDeleteConfirmOpen(true)} onPreviewLog={previewGenerationLog} />
             </Drawer>
-            <Drawer title="参数" placement="bottom" height="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
+            <Drawer title="参数" placement="bottom" size="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
                 <div className="grid grid-cols-2 gap-3 pb-4">
                     <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                 </div>
@@ -527,6 +529,18 @@ export default function VideoPage() {
 
 function GenerationSettings({ config, model, updateConfig, openConfigDialog }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig; openConfigDialog: (shouldPromptContinue?: boolean) => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const videoConfig = { ...config, model, videoModel: model };
+    const provider = isGrokVideoConfig(videoConfig) ? "grok" : "openai";
+    const switchProvider = (value: string | number) => {
+        if (value === "grok") {
+            const grokModel = findGrokVideoModel(config);
+            if (!config.videoModels.includes(grokModel)) updateConfig("videoModels", [...config.videoModels, grokModel]);
+            updateConfig("videoModel", grokModel);
+            return;
+        }
+        const compatibleModel = config.videoModels.find((item) => !isGrokVideoModel(modelOptionName(item)));
+        if (compatibleModel) updateConfig("videoModel", compatibleModel);
+    };
 
     return (
         <>
@@ -534,11 +548,19 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
                 <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">模型</span>
                 <ModelPicker config={config} value={model} onChange={(value) => updateConfig("videoModel", value)} capability="video" fullWidth onMissingConfig={() => openConfigDialog(false)} />
             </label>
+            <label className="col-span-2 block min-w-0 sm:col-span-1">
+                <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">生成方式</span>
+                <Segmented block value={provider} onChange={switchProvider} options={[{ label: "兼容接口", value: "openai" }, { label: "Grok", value: "grok" }]} />
+            </label>
             <div className="col-span-2">
-                <VideoSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" />
+                <VideoSettingsPanel config={videoConfig} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" />
             </div>
         </>
     );
+}
+
+function findGrokVideoModel(config: AiConfig) {
+    return config.videoModels.find((model) => isGrokVideoModel(modelOptionName(model))) || config.models.find((model) => isGrokVideoModel(modelOptionName(model))) || "grok-imagine-video";
 }
 
 function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedVideo; onDownload: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void }) {
@@ -785,6 +807,7 @@ function normalizeLogConfig(log: Partial<GenerationLog>): GenerationLogConfig {
         videoSeconds: log.config?.videoSeconds || log.seconds || "",
         videoGenerateAudio: log.config?.videoGenerateAudio || "true",
         videoWatermark: log.config?.videoWatermark || "false",
+        grokVideoMode: normalizeGrokVideoMode(log.config?.grokVideoMode),
     };
 }
 
@@ -797,6 +820,7 @@ function buildLog({ prompt, model, config, references, videoReferences, audioRef
         videoSeconds: config.videoSeconds,
         videoGenerateAudio: config.videoGenerateAudio,
         videoWatermark: config.videoWatermark,
+        grokVideoMode: normalizeGrokVideoMode(config.grokVideoMode),
     };
     return {
         id: nanoid(),
@@ -821,16 +845,19 @@ function buildLog({ prompt, model, config, references, videoReferences, audioRef
 }
 
 function buildVideoConfig(config: AiConfig, model: string): AiConfig {
-    const seedance = isSeedanceVideoConfig({ ...config, model });
+    const requestConfig = { ...config, model, videoModel: model };
+    const seedance = isSeedanceVideoConfig(requestConfig);
+    const grok = isGrokVideoConfig(requestConfig);
     return {
         ...config,
         model,
         videoModel: model,
         size: seedance ? normalizeSeedanceRatio(config.size) : normalizeVideoSize(config.size),
-        videoSeconds: normalizeVideoSeconds(config.videoSeconds),
+        videoSeconds: grok ? String(normalizeGrokDuration(config.videoSeconds)) : normalizeVideoSeconds(config.videoSeconds),
         vquality: normalizeResolution(config.vquality),
         videoGenerateAudio: String(boolConfig(config.videoGenerateAudio, true)),
         videoWatermark: String(boolConfig(config.videoWatermark, false)),
+        grokVideoMode: normalizeGrokVideoMode(config.grokVideoMode),
     };
 }
 

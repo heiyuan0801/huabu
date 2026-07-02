@@ -9,3 +9,8 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 配置与用户偏好：每个模型渠道新增 OpenAI / Gemini 调用格式选择，默认 OpenAI，切换默认格式时同步更新默认 Base URL；渠道 Tab 增加紧凑醒目的提醒，说明模型是否可选需要到“模型”Tab 选择。
 - Gemini 调用格式：支持拉取 Gemini 模型列表，并用于文本问答、在线 Agent 工具调用、基础生图和图生图请求。
 - 音频和视频生成：选择 Gemini 调用格式时先给出不支持提示，仍需使用 OpenAI 兼容渠道。
+- Grok 图片生成与编辑：`grok-imagine-image` / `grok-imagine-image-quality` 走 xAI JSON 格式，生成使用 `/v1/images/generations`，单图编辑使用 `/v1/images/edits`。
+- Grok 视频生成：视频创作台新增 Grok 生成方式，`grok-imagine-video` 支持 xAI `/v1/videos/generations`、`/v1/videos/edits`、`/v1/videos/extensions` 异步任务和 `/v1/videos/{request_id}` 轮询结果。
+- Grok 错误与结果处理：Grok 图片接口返回字符串 `error` 时会展示真实错误；Grok 视频结果使用远程 URL 播放，避免浏览器下载 mp4 时触发 CORS 报错。
+- 提示词封面：首页展示区和提示词库在没有封面图时显示占位内容，避免空 `img src` 触发浏览器警告。
+- 顶部入口与公告：右上角项目入口跳转到未来中转站，普通顶部导航和移动导航展示 `未来中转站 QQ 交流群：901256496` 公告。

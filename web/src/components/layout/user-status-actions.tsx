@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { BookOpen, Keyboard, Settings2 } from "lucide-react";
+import { BookOpen, Keyboard, Megaphone, Settings2 } from "lucide-react";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { GitHubLink } from "@/components/layout/github-link";
@@ -31,6 +31,12 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
 
     return (
         <div className="inline-flex shrink-0 items-center gap-1">
+            {variant === "default" ? (
+                <span className="hidden max-w-[280px] items-center gap-1.5 truncate text-xs text-stone-500 lg:inline-flex dark:text-stone-400" title="未来中转站 QQ 交流群：901256496">
+                    <Megaphone className="size-3.5 shrink-0" />
+                    <span className="truncate">未来中转站 QQ 交流群：901256496</span>
+                </span>
+            ) : null}
             <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={naturalIconClass} style={iconStyle} aria-label="文档" title="文档">
                 <BookOpen className="size-4" />
             </a>

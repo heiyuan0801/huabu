@@ -1,9 +1,10 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { Switch } from "antd";
+import { Segmented, Switch } from "antd";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
+import { isGrokVideoConfig, normalizeGrokDuration, normalizeGrokVideoMode } from "@/lib/grok-video";
 import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptions, seedancePixelLabel, seedanceRatioOptions, seedanceResolutionOptions } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { modelOptionName, type AiConfig } from "@/stores/use-config-store";
@@ -26,7 +27,7 @@ const secondOptions = [6, 10, 12, 16, 20];
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark", value: string) => void;
+    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "grokVideoMode", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -35,6 +36,9 @@ type VideoSettingsPanelProps = {
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
     if (isSeedanceVideoConfig(config)) {
         return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
+    }
+    if (isGrokVideoConfig(config)) {
+        return <GrokVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
     }
 
     const seconds = config.videoSeconds || "6";
@@ -97,6 +101,43 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         <NumberInput value={seconds} min={1} max={20} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
                     </div>
                 </SettingGroup>
+            </div>
+        </ImageSettingsTheme>
+    );
+}
+
+function GrokVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className }: VideoSettingsPanelProps) {
+    const seconds = String(normalizeGrokDuration(config.videoSeconds));
+    const mode = normalizeGrokVideoMode(config.grokVideoMode);
+
+    return (
+        <ImageSettingsTheme theme={theme}>
+            <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
+                {showTitle ? <div className="text-lg font-semibold">视频设置</div> : null}
+                <SettingGroup title="类型" color={theme.node.muted}>
+                    <Segmented
+                        block
+                        value={mode}
+                        onChange={(value) => onConfigChange("grokVideoMode", String(value))}
+                        options={[
+                            { label: "视频生成", value: "generate" },
+                            { label: "视频剪辑", value: "edit" },
+                            { label: "视频扩展", value: "extend" },
+                        ]}
+                    />
+                </SettingGroup>
+                {mode !== "edit" ? (
+                    <SettingGroup title="时长" color={theme.node.muted}>
+                        <div className="grid grid-cols-3 gap-2.5">
+                            {secondOptions.map((value) => (
+                                <OptionPill key={value} selected={seconds === String(value)} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
+                                    {value}s
+                                </OptionPill>
+                            ))}
+                            <NumberInput value={seconds} min={1} max={20} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
+                        </div>
+                    </SettingGroup>
+                ) : null}
             </div>
         </ImageSettingsTheme>
     );

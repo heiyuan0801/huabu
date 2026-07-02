@@ -1,8 +1,8 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
-import { appName, gitConfig } from './shared';
+import { appName } from './shared';
 import { ArrowUpRight } from 'lucide-react';
 
-const githubUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
+const relayUrl = 'https://weilai.chat';
 const qqUrl = 'https://qm.qq.com/q/DFnKzZ807u';
 
 export function baseOptions(): BaseLayoutProps {
@@ -34,12 +34,12 @@ export function baseOptions(): BaseLayoutProps {
       },
       {
         type: 'icon',
-        text: 'GitHub',
-        label: 'GitHub',
-        url: githubUrl,
+        text: '未来中转站',
+        label: '未来中转站',
+        url: relayUrl,
         external: true,
         on: 'menu',
-        icon: <img src="/github.svg" alt="" className="size-4" />,
+        icon: <ArrowUpRight className="size-4" />,
       },
       {
         type: 'icon',
