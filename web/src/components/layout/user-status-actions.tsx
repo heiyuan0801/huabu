@@ -1,7 +1,5 @@
-"use client";
-
 import type { CSSProperties } from "react";
-import { BookOpen, Keyboard, Megaphone, Settings2 } from "lucide-react";
+import { BookOpen, Keyboard, Megaphone, Puzzle, Settings2 } from "lucide-react";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { GitHubLink } from "@/components/layout/github-link";
@@ -16,9 +14,10 @@ type UserStatusActionsProps = {
     showConfig?: boolean;
     variant?: "default" | "canvas";
     onOpenShortcuts?: () => void;
+    onOpenPlugins?: () => void;
 };
 
-export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts }: UserStatusActionsProps) {
+export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
     const theme = useThemeStore((state) => state.theme);
     const setTheme = useThemeStore((state) => state.setTheme);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -36,6 +35,11 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     <Megaphone className="size-3.5 shrink-0" />
                     <span className="truncate">未来中转站 QQ 交流群：901256496</span>
                 </span>
+            ) : null}
+            {onOpenPlugins ? (
+                <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenPlugins} aria-label="节点插件" title="节点插件">
+                    <Puzzle className="size-4" />
+                </button>
             ) : null}
             <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={naturalIconClass} style={iconStyle} aria-label="文档" title="文档">
                 <BookOpen className="size-4" />
