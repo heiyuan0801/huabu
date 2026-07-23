@@ -1,11 +1,12 @@
 import axios from "axios";
+import { nanoid } from "nanoid";
 
 import { dataUrlToFile } from "@/lib/image-utils";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { buildGrokImageReference, isDefaultOpenAIBaseUrl, isGrokVideoConfig, normalizeGrokDuration, normalizeGrokVideoMode, type GrokVideoMode } from "@/lib/grok-video";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
-import { buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { buildApiUrl, modelOptionName, proxyWeilaiUrl, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
@@ -23,11 +24,26 @@ type GrokVideoState = {
     error?: { message?: string } | null;
     video?: { url?: string; duration?: number; respect_moderation?: boolean } | null;
 };
+type FireflyChatContentPart = {
+    type?: string;
+    text?: string;
+    url?: string;
+    b64_json?: string;
+    video_url?: string | { url?: string };
+};
+type FireflyChatResponse = {
+    choices?: Array<{ message?: { content?: string | FireflyChatContentPart[]; videos?: FireflyChatContentPart[] } }>;
+    data?: FireflyChatContentPart[];
+    error?: { message?: string } | string;
+    code?: number | string;
+    message?: string;
+    msg?: string;
+};
 type ApiEnvelope<T> = T | { code?: number; data?: T | null; msg?: string };
 type RequestOptions = { signal?: AbortSignal };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "grok"; model: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "grok" | "firefly"; model: string; result?: VideoGenerationResult };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
 function aiApiUrl(config: AiConfig, path: string) {
@@ -59,6 +75,9 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const selectedModel = (config.model || config.videoModel).trim();
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     assertVideoConfig(requestConfig, requestConfig.model);
+    if (isFireflyVideoModel(requestConfig.model)) {
+        return createFireflyVideoTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
+    }
     if (isSeedanceVideoConfig(requestConfig)) {
         return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     }
@@ -72,6 +91,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
 }
 
 export async function pollVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
+    if (task.provider === "firefly") return task.result ? { status: "completed", result: task.result } : { status: "failed", error: "Firefly 视频任务没有返回结果" };
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
     if (task.provider === "seedance") return pollSeedanceTask(requestConfig, task, options);
@@ -83,6 +103,65 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
     if (result.blob) return uploadMediaFile(result.blob, "video");
     if (result.url) return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4" };
     throw new Error("视频接口没有返回可播放的视频");
+}
+
+function isFireflyVideoModel(model: string) {
+    return /^firefly-(?:sora2(?:-pro)?|veo31(?:-ref|-fast)?|kling3|kling-o3)-/i.test(model.trim());
+}
+
+async function createFireflyVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    if (videoReferences.length || audioReferences.length) throw new Error("Firefly 视频模型暂只支持参考图，请移除参考视频和参考音频");
+    assertFireflyImageReferences(config.model, references);
+    const referenceUrls = await Promise.all(references.map((image) => resolveFireflyImageUrl(image)));
+    const content = referenceUrls.length
+        ? [{ type: "text", text: prompt }, ...referenceUrls.map((url) => ({ type: "image_url", image_url: { url } }))]
+        : prompt;
+    try {
+        const response = await axios.post<FireflyChatResponse>(
+            aiApiUrl(config, "/chat/completions"),
+            { model: config.model, messages: [{ role: "user", content }], ...(config.model.toLowerCase().startsWith("firefly-kling") ? { generate_audio: boolConfig(config.videoGenerateAudio, true) } : {}) },
+            { headers: aiHeaders(config, "application/json"), signal: options?.signal },
+        );
+        return { id: nanoid(), provider: "firefly", model, result: parseFireflyVideoPayload(response.data, config.baseUrl) };
+    } catch (error) {
+        throw new Error(readAxiosError(error, "Firefly 视频生成失败"));
+    }
+}
+
+async function resolveFireflyImageUrl(image: ReferenceImage) {
+    const directUrl = image.url || image.dataUrl;
+    return isPublicMediaUrl(directUrl) || directUrl.startsWith("data:image/") ? directUrl : imageToDataUrl(image);
+}
+
+function assertFireflyImageReferences(model: string, references: ReferenceImage[]) {
+    const lowerModel = model.toLowerCase();
+    const limit = lowerModel.startsWith("firefly-veo31-ref-") ? 3 : lowerModel.startsWith("firefly-veo31-") || lowerModel.startsWith("firefly-kling") ? 2 : undefined;
+    if (limit && references.length > limit) throw new Error(`当前 Firefly 视频模型最多支持 ${limit} 张参考图`);
+}
+
+function parseFireflyVideoPayload(payload: FireflyChatResponse, baseUrl: string): VideoGenerationResult {
+    if (typeof payload.code === "number" && payload.code !== 0) throw new Error(payload.msg || "Firefly 视频生成失败");
+    if (payload.error) throw new Error(typeof payload.error === "string" ? payload.error : payload.error.message || payload.message || "Firefly 视频生成失败");
+    const sources = [
+        ...(payload.data?.flatMap(readFireflyVideoSources) || []),
+        ...(payload.choices?.flatMap((choice) => [choice.message?.content, ...(choice.message?.videos || [])].flatMap(readFireflyVideoSources)) || []),
+    ];
+    const source = sources[0];
+    if (!source) throw new Error("Firefly 接口没有返回视频");
+    const url = proxyWeilaiUrl(source.startsWith("/") ? new URL(source, baseUrl).toString() : source);
+    return { url, mimeType: source.startsWith("data:video/webm") || /\.webm(?:$|\?)/i.test(source) ? "video/webm" : "video/mp4" };
+}
+
+function readFireflyVideoSources(content: string | FireflyChatContentPart[] | FireflyChatContentPart | undefined): string[] {
+    if (!content) return [];
+    if (typeof content === "string") {
+        return Array.from(content.matchAll(/data:video\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+|https?:\/\/[^\s)\]"']+|\/generated\/[^\s)\]"']+/gi), (match) => match[0]);
+    }
+    if (Array.isArray(content)) return content.flatMap(readFireflyVideoSources);
+    const videoUrl = typeof content.video_url === "string" ? content.video_url : content.video_url?.url;
+    return [videoUrl, content.url, content.b64_json ? `data:video/mp4;base64,${content.b64_json}` : undefined, ...(content.text ? readFireflyVideoSources(content.text) : [])].filter(
+        (value): value is string => Boolean(value),
+    );
 }
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {

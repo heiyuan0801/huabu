@@ -9,7 +9,7 @@ description: 用最少步骤把无限画布跑起来
 
 ## Vercel 部署
 
-在 Vercel 中导入仓库即可，根目录 `vercel.json` 会构建 `web/`。当前版本的 AI 请求由浏览器前台直连用户自己的 OpenAI 兼容地址，不需要额外配置服务端。
+在 Vercel 中导入仓库即可。当前版本的 AI 请求默认由浏览器直连用户自己的 OpenAI 兼容地址；`weilai.chat` 渠道会自动使用项目内置的 Next.js 固定代理，不需要额外配置 CORS。
 
 ## 本地启动
 
@@ -45,4 +45,4 @@ docker run --rm -p 3000:3000 infinite-canvas
 ## 说明
 
 - 当前画布项目和“我的素材”主要保存在浏览器本地，WebDAV 同步需要用户自行配置。
-- AI API Key 保存在浏览器本地，并由前端直接请求 OpenAI 兼容接口。
+- AI API Key 保存在浏览器本地；默认由前端直连 OpenAI 兼容接口，`weilai.chat` 渠道请求会经过当前 Next.js 服务。

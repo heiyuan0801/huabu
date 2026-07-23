@@ -62,6 +62,7 @@ export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+const WEILAI_API_ORIGIN = "https://weilai.chat";
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
@@ -133,7 +134,7 @@ function isVideoModelName(model: string) {
 
 function isImageModelName(model: string) {
     const value = modelOptionName(model).toLowerCase();
-    return !isVideoModelName(model) && !isAudioModelName(model) && (value.includes("seedream") || value.includes("gpt-image") || value.includes("image") || value.includes("dall-e") || value.includes("dalle") || value.includes("imagen") || value.includes("flux") || value.includes("sdxl") || value.includes("stable-diffusion") || value.includes("midjourney"));
+    return !isVideoModelName(model) && !isAudioModelName(model) && (value.includes("seedream") || value.includes("nano-banana") || value.includes("gpt-image") || value.includes("image") || value.includes("dall-e") || value.includes("dalle") || value.includes("imagen") || value.includes("flux") || value.includes("sdxl") || value.includes("stable-diffusion") || value.includes("midjourney"));
 }
 
 function isAudioModelName(model: string) {
@@ -378,7 +379,18 @@ export function buildApiUrl(baseUrl: string, path: string) {
     normalizedBaseUrl = normalizeArkPlanBaseUrl(normalizedBaseUrl);
     const lowerBaseUrl = normalizedBaseUrl.toLowerCase();
     const apiBaseUrl = lowerBaseUrl.endsWith("/v1") || lowerBaseUrl.endsWith("/api/v3") || lowerBaseUrl.endsWith("/api/plan/v3") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
-    return `${apiBaseUrl}${path}`;
+    return proxyWeilaiUrl(`${apiBaseUrl}${path}`);
+}
+
+export function proxyWeilaiUrl(value: string) {
+    if (typeof window === "undefined") return value;
+    try {
+        const url = new URL(value);
+        if (url.origin !== WEILAI_API_ORIGIN || window.location.origin === WEILAI_API_ORIGIN) return value;
+        return `/ai-proxy${url.pathname}${url.search}`;
+    } catch {
+        return value;
+    }
 }
 
 function normalizeArkPlanBaseUrl(baseUrl: string) {
