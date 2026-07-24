@@ -12,6 +12,7 @@ import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/vide
 import { DOCS_URL } from "@/constant/env";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
+import { saveImageGenerationLog } from "@/services/image-generation-log";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
@@ -2079,15 +2080,19 @@ function InfiniteCanvasPage() {
                     const controller = runController;
                     targetIds.forEach((targetId) => startGenerationRequest(targetId, nodeId, nodeId, controller));
                     if (count > 1) startGenerationRequest(rootId, nodeId, nodeId, controller);
+                    const batchStartedAt = performance.now();
+                    const generatedImages: Array<{ image: UploadedImage; durationMs: number } | undefined> = Array.from({ length: count });
                     let hasSuccess = false;
                     let hasFailure = false;
                     await Promise.all(
-                        targetIds.map(async (targetId) => {
+                        targetIds.map(async (targetId, index) => {
+                            const imageStartedAt = performance.now();
                             try {
                                 const image = referenceImages.length
                                     ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, undefined, { signal: controller.signal }).then((items) => items[0])
                                     : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, { signal: controller.signal }).then((items) => items[0]);
                                 const uploaded = await uploadImage(image.dataUrl);
+                                generatedImages[index] = { image: uploaded, durationMs: performance.now() - imageStartedAt };
                                 const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                                 setNodes((prev) => {
                                     const root = prev.find((node) => node.id === rootId);
@@ -2131,6 +2136,19 @@ function InfiniteCanvasPage() {
                     if (controller.signal.aborted) {
                         setNodes((prev) => prev.map((node) => (node.id === nodeId && isConfigNode && node.metadata?.status === NODE_STATUS_LOADING ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } } : node)));
                         return;
+                    }
+                    try {
+                        await saveImageGenerationLog({
+                            prompt: effectivePrompt,
+                            model: generationConfig.model,
+                            config: generationConfig,
+                            references: referenceImages,
+                            durationMs: performance.now() - batchStartedAt,
+                            requestedCount: count,
+                            images: generatedImages.flatMap((item) => (item ? [item] : [])),
+                        });
+                    } catch {
+                        message.warning("图片已生成，但生成记录保存失败");
                     }
                     if (hasFailure) message.error(hasSuccess ? "部分图片生成失败" : "全部图片生成失败");
                     setNodes((prev) =>

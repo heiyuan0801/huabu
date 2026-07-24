@@ -170,23 +170,31 @@ export default function ImagePage() {
         try {
             const logImages = await Promise.all(
                 successImages.map(async (image) => {
-                    const stored = await uploadImage(image.dataUrl);
-                    return { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
+                    try {
+                        const stored = await uploadImage(image.dataUrl);
+                        return { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
+                    } catch {
+                        return image;
+                    }
                 }),
             );
-            saveLog(
-                buildLog({
-                    prompt: text,
-                    model,
-                    config: { ...snapshot.config, count: String(generationCount) },
-                    references: snapshot.references,
-                    durationMs: performance.now() - batchStartedAt,
-                    successCount,
-                    failCount,
-                    status: successCount ? "成功" : "失败",
-                    images: logImages,
-                }),
-            );
+            try {
+                await saveLog(
+                    buildLog({
+                        prompt: text,
+                        model,
+                        config: { ...snapshot.config, count: String(generationCount) },
+                        references: snapshot.references,
+                        durationMs: performance.now() - batchStartedAt,
+                        successCount,
+                        failCount,
+                        status: successCount ? "成功" : "失败",
+                        images: logImages,
+                    }),
+                );
+            } catch {
+                message.warning("图片已生成，但生成记录保存失败");
+            }
             successCount ? message.success("图片已生成") : message.error(failed?.reason instanceof Error ? failed.reason.message : "生成失败");
         } finally {
             setRunning(false);
@@ -250,8 +258,9 @@ export default function ImagePage() {
         setDeleteConfirmOpen(false);
     };
 
-    const saveLog = (log: GenerationLog) => {
-        void logStore.setItem(log.id, serializeLog(log)).then(refreshLogs);
+    const saveLog = async (log: GenerationLog) => {
+        await logStore.setItem(log.id, serializeLog(log));
+        await refreshLogs();
     };
 
     const refreshLogs = async () => setLogs(await readStoredLogs());

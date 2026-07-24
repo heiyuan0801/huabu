@@ -14,6 +14,8 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Adobe Firefly 视频生成：`firefly-sora2-*`、`firefly-sora2-pro-*`、`firefly-veo31-*`、`firefly-veo31-ref-*`、`firefly-veo31-fast-*`、`firefly-kling3-*` 和 `firefly-kling-o3-*` 改走 adobe2api 的 `/v1/chat/completions` 统一入口，支持画布及视频创作台的文生视频和参考图生成。
 - 未来中转站跨域兼容：配置 `https://weilai.chat` 渠道时，模型列表、AI 请求和生成媒体自动通过当前 Next.js 的固定同源代理访问，避免 `image.weilai.chat` 被浏览器 CORS 拦截。
 - OpenAI 图片尺寸映射：`1:1`、`16:9`、`9:16`、`4:3`、`3:4` 按质量映射为兼容尺寸；Firefly 图片请求同时发送 `size` 和 `aspect_ratio`，`auto` 按 `1:1` 处理。
+- 生图工作台记录：远程结果图受 CORS 限制而无法保存到本地图片库时，仍会保存生成记录，并等待记录写入完成后刷新列表。
+- 画布生成记录：画布生图完成后，将提示词、模型、尺寸、参考图、耗时和生成结果保存到生图工作台的“生成记录”。
 - Grok 视频生成：视频创作台新增 Grok 生成方式，`grok-imagine-video` 支持 xAI `/v1/videos/generations`、`/v1/videos/edits`、`/v1/videos/extensions` 异步任务和 `/v1/videos/{request_id}` 轮询结果。
 - Grok 错误与结果处理：Grok 图片接口返回字符串 `error` 时会展示真实错误；Grok 视频结果使用远程 URL 播放，避免浏览器下载 mp4 时触发 CORS 报错。
 - 提示词封面：首页展示区和提示词库在没有封面图时显示占位内容，避免空 `img src` 触发浏览器警告。
