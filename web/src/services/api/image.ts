@@ -75,6 +75,16 @@ type ImageApiResponse = {
     message?: string;
     msg?: string;
 };
+type ChatImageContentPart = {
+    type?: string;
+    text?: string;
+    url?: string;
+    b64_json?: string;
+    image_url?: string | { url?: string };
+};
+type ChatImageResponse = ImageApiResponse & {
+    choices?: Array<{ message?: { content?: string | ChatImageContentPart[]; images?: ChatImageContentPart[] } }>;
+};
 type GeminiPart = {
     text?: string;
     inlineData?: { mimeType?: string; data?: string };
@@ -114,6 +124,13 @@ const IMAGE_MAX_PIXELS = 8294400;
 const IMAGE_MAX_EDGE = 3840;
 const IMAGE_MAX_RATIO = 3;
 const IMAGE_OUTPUT_FORMAT = "png";
+const OPENAI_IMAGE_SIZES: Record<string, string[]> = {
+    "1:1": ["1024x1024", "1536x1536", "2048x2048"],
+    "16:9": ["1792x1024", "2752x1536"],
+    "9:16": ["1024x1792", "1536x2752"],
+    "4:3": ["2048x1536"],
+    "3:4": ["1536x2048"],
+};
 
 const GEMINI_SUPPORTED_RATIOS = ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"];
 const GEMINI_IMAGE_SIZE_BY_QUALITY: Record<string, string> = { low: "1K", medium: "2K", high: "4K", standard: "1K", hd: "2K" };
@@ -187,6 +204,8 @@ function validateImageSize(width: number, height: number) {
 function resolveRequestSize(quality: string | undefined, size: string) {
     const value = size.trim();
     if (!value || value.toLowerCase() === "auto") return undefined;
+    const compatibleSize = resolveOpenAIRatioSize(quality, value);
+    if (compatibleSize) return compatibleSize;
     const dimensions = parseImageDimensions(value);
     if (dimensions) {
         validateImageSize(dimensions.width, dimensions.height);
@@ -194,6 +213,41 @@ function resolveRequestSize(quality: string | undefined, size: string) {
     }
     if (value.includes(":")) return resolveSize(quality, value);
     throw new Error("图像尺寸格式不支持，请使用 auto、9:16 或 1024x1024");
+}
+
+function resolveOpenAIRatioSize(quality: string | undefined, ratio: string) {
+    const sizes = OPENAI_IMAGE_SIZES[ratio];
+    if (!sizes) return undefined;
+    if (quality === "high") return sizes.at(-1);
+    if (quality === "medium" || quality === "hd") return sizes[Math.min(1, sizes.length - 1)];
+    return sizes[0];
+}
+
+function resolveRequestAspectRatio(size: string) {
+    const value = size.trim();
+    if (!value || value.toLowerCase() === "auto") return "1:1";
+    if (/^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/.test(value)) return value;
+    const dimensions = parseImageDimensions(value);
+    if (!dimensions) return undefined;
+    const mappedRatio = Object.entries(OPENAI_IMAGE_SIZES).find(([, sizes]) => sizes.includes(`${dimensions.width}x${dimensions.height}`))?.[0];
+    if (mappedRatio) return mappedRatio;
+    const divisor = greatestCommonDivisor(dimensions.width, dimensions.height);
+    return `${dimensions.width / divisor}:${dimensions.height / divisor}`;
+}
+
+function greatestCommonDivisor(a: number, b: number): number {
+    return b ? greatestCommonDivisor(b, a % b) : a;
+}
+
+function resolveFireflyRequestSize(quality: string | undefined, size: string) {
+    const value = size.trim();
+    if (!value || value.toLowerCase() === "auto") return undefined;
+    const dimensions = parseImageDimensions(value);
+    if (dimensions) {
+        validateImageSize(dimensions.width, dimensions.height);
+        return `${dimensions.width}x${dimensions.height}`;
+    }
+    return resolveOpenAIRatioSize(quality, value);
 }
 
 function resolveGeminiImageConfig(config: AiConfig) {
@@ -242,24 +296,25 @@ function resolveImageDataUrl(item: Record<string, unknown>) {
     return null;
 }
 
-function parseImagePayload(payload: ImageApiResponse) {
+function parseImagePayload(payload: ImageApiResponse, baseUrl?: string) {
+    validateImagePayload(payload);
+    const images =
+        payload.data
+            ?.map(resolveImageDataUrl)
+            .filter((value): value is string => Boolean(value))
+            .map((dataUrl) => ({ id: nanoid(), dataUrl: baseUrl ? resolveImageUrl(dataUrl, baseUrl) : dataUrl })) || [];
+
+    if (images.length === 0) throw new Error("接口没有返回图片");
+    return images;
+}
+
+function validateImagePayload(payload: ImageApiResponse) {
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || "请求失败");
     }
     if (payload.error) {
         throw new Error(typeof payload.error === "string" ? payload.error : payload.error.message || payload.message || "请求失败");
     }
-    const images =
-        payload.data
-            ?.map(resolveImageDataUrl)
-            .filter((value): value is string => Boolean(value))
-            .map((dataUrl) => ({ id: nanoid(), dataUrl })) || [];
-
-    if (images.length === 0) {
-        throw new Error("接口没有返回图片");
-    }
-
-    return images;
 }
 
 function readAxiosError(error: unknown, fallback: string) {
@@ -665,6 +720,53 @@ function parseGeminiImagePayload(payload: GeminiPayload) {
     return images;
 }
 
+function isFireflyImageModel(model: string) {
+    return /^(?:firefly-nano-banana(?:2|-pro)?|firefly-gpt-image)-/i.test(model.trim());
+}
+
+async function requestFireflyImages(config: AiConfig, prompt: string, references: ReferenceImage[], count: number, options?: RequestOptions) {
+    return (await Promise.all(Array.from({ length: count }, () => requestFireflyImagesOnce(config, prompt, references, options)))).flat().slice(0, count);
+}
+
+async function requestFireflyImagesOnce(config: AiConfig, prompt: string, references: ReferenceImage[], options?: RequestOptions) {
+    const referenceUrls = await Promise.all(references.map(imageToDataUrl));
+    const quality = normalizeQuality(config.quality);
+    const size = resolveFireflyRequestSize(quality, config.size);
+    const aspectRatio = resolveRequestAspectRatio(config.size);
+    const content = referenceUrls.length
+        ? [{ type: "text", text: withSystemPrompt(config, prompt) }, ...referenceUrls.map((url) => ({ type: "image_url", image_url: { url } }))]
+        : withSystemPrompt(config, prompt);
+    const response = await axios.post<ChatImageResponse>(
+        aiApiUrl(config, "/chat/completions"),
+        { model: config.model, messages: [{ role: "user", content }], ...(size ? { size } : {}), ...(aspectRatio ? { aspect_ratio: aspectRatio } : {}) },
+        { headers: aiHeaders(config, "application/json"), signal: options?.signal },
+    );
+    return parseFireflyImagePayload(response.data, config.baseUrl);
+}
+
+function parseFireflyImagePayload(payload: ChatImageResponse, baseUrl: string) {
+    validateImagePayload(payload);
+    const sources = [
+        ...(payload.data?.map(resolveImageDataUrl).filter((value): value is string => Boolean(value)) || []),
+        ...(payload.choices?.flatMap((choice) => [choice.message?.content, ...(choice.message?.images || [])].flatMap(readChatImageSources)) || []),
+    ];
+    const images = Array.from(new Set(sources)).map((source) => ({ id: nanoid(), dataUrl: resolveImageUrl(source, baseUrl) }));
+    if (!images.length) throw new Error("Firefly 接口没有返回图片");
+    return images;
+}
+
+function readChatImageSources(content: string | ChatImageContentPart[] | ChatImageContentPart | undefined): string[] {
+    if (!content) return [];
+    if (typeof content === "string") return Array.from(content.matchAll(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+|https?:\/\/[^\s)\]"']+|\/generated\/[^\s)\]"']+/gi), (match) => match[0]);
+    if (Array.isArray(content)) return content.flatMap(readChatImageSources);
+    const imageUrl = typeof content.image_url === "string" ? content.image_url : content.image_url?.url;
+    return [imageUrl, content.url, content.b64_json ? `data:image/png;base64,${content.b64_json}` : undefined, ...(content.text ? readChatImageSources(content.text) : [])].filter((value): value is string => Boolean(value));
+}
+
+function resolveImageUrl(source: string, baseUrl: string) {
+    return source.startsWith("/") ? new URL(source, baseUrl).toString() : source;
+}
+
 function isGrokImageConfig(config: Pick<AiConfig, "model" | "imageModel" | "baseUrl">) {
     return isGrokImageModel(config.model || config.imageModel) || isXaiBaseUrl(config.baseUrl);
 }
@@ -690,7 +792,7 @@ async function requestGrokGeneration(config: AiConfig, prompt: string, n: number
         },
         { headers: aiHeaders(config, "application/json"), signal: options?.signal },
     );
-    return parseImagePayload(response.data);
+    return parseImagePayload(response.data, config.baseUrl);
 }
 
 async function requestGrokEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, options?: RequestOptions) {
@@ -708,7 +810,7 @@ async function requestGrokEdit(config: AiConfig, prompt: string, references: Ref
         },
         { headers: aiHeaders(config, "application/json"), signal: options?.signal },
     );
-    return parseImagePayload(response.data);
+    return parseImagePayload(response.data, config.baseUrl);
 }
 
 export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
@@ -741,6 +843,13 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             throw new Error(readAxiosError(error, "请求失败"));
         }
     }
+    if (isFireflyImageModel(requestConfig.model)) {
+        try {
+            return await requestFireflyImages(requestConfig, prompt, [], n, options);
+        } catch (error) {
+            throw new Error(readAxiosError(error, "请求失败"));
+        }
+    }
     if (isGrokImageConfig(requestConfig)) {
         try {
             return await requestGrokGeneration(requestConfig, prompt, n, options);
@@ -769,7 +878,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 signal: options?.signal,
             },
         );
-        const images = parseImagePayload(response.data);
+        const images = parseImagePayload(response.data, requestConfig.baseUrl);
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
@@ -809,6 +918,14 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
             throw new Error(readAxiosError(error, "请求失败"));
         }
     }
+    if (isFireflyImageModel(requestConfig.model)) {
+        if (mask) throw new Error("Firefly 图片生成暂不支持蒙版编辑");
+        try {
+            return await requestFireflyImages(requestConfig, requestPrompt, references, n, options);
+        } catch (error) {
+            throw new Error(readAxiosError(error, "请求失败"));
+        }
+    }
     if (isGrokImageConfig(requestConfig)) {
         try {
             return await requestGrokEdit(requestConfig, requestPrompt, references, mask, options);
@@ -840,7 +957,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 
     try {
         const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal });
-        const images = parseImagePayload(response.data);
+        const images = parseImagePayload(response.data, requestConfig.baseUrl);
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
