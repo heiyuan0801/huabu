@@ -17,6 +17,7 @@ BAIDU_ID=$(sanitize_id "${ANALYTICS_BAIDU_ID:-}")
 cat > /usr/share/nginx/html/config.js <<EOF
 window.__RUNTIME_CONFIG__ = {
   ANALYTICS_GA4_ID: "${GA4_ID}",
-  ANALYTICS_BAIDU_ID: "${BAIDU_ID}"
+  ANALYTICS_BAIDU_ID: "${BAIDU_ID}",
+  AI_PROXY_BASE: "/ai-proxy"
 };
 EOF

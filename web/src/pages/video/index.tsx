@@ -17,7 +17,7 @@ import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
-import { modelOptionLabel, modelOptionName, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionLabel, modelOptionName, selectableModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ReferenceImage } from "@/types/image";
@@ -566,15 +566,15 @@ export default function VideoPage() {
 function GenerationSettings({ config, model, updateConfig, openConfigDialog }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig; openConfigDialog: (shouldPromptContinue?: boolean) => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const videoConfig = { ...config, model, videoModel: model };
+    const videoModels = selectableModelsByCapability(config, "video");
     const provider = isGrokVideoConfig(videoConfig) ? "grok" : "openai";
     const switchProvider = (value: string | number) => {
         if (value === "grok") {
             const grokModel = findGrokVideoModel(config);
-            if (!config.videoModels.includes(grokModel)) updateConfig("videoModels", [...config.videoModels, grokModel]);
             updateConfig("videoModel", grokModel);
             return;
         }
-        const compatibleModel = config.videoModels.find((item) => !isGrokVideoModel(modelOptionName(item)));
+        const compatibleModel = videoModels.find((item) => !isGrokVideoModel(modelOptionName(item)));
         if (compatibleModel) updateConfig("videoModel", compatibleModel);
     };
 
@@ -596,7 +596,7 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
 }
 
 function findGrokVideoModel(config: AiConfig) {
-    return config.videoModels.find((model) => isGrokVideoModel(modelOptionName(model))) || config.models.find((model) => isGrokVideoModel(modelOptionName(model))) || "grok-imagine-video";
+    return selectableModelsByCapability(config, "video").find((model) => isGrokVideoModel(modelOptionName(model))) || "grok-imagine-video";
 }
 
 function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedVideo; onDownload: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void }) {

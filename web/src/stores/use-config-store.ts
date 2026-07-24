@@ -3,6 +3,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
+import { AI_PROXY_BASE } from "@/constant/runtime-config";
+
 export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 
@@ -60,20 +62,22 @@ export type WebdavSyncConfig = {
 export type ConfigTabKey = "channels" | "preferences" | "prompt-sources" | "webdav";
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
+export const DEFAULT_CHANNEL_NAME = "未来中转站";
+export const DEFAULT_CHANNEL_BASE_URL = "https://api1.weilai.chat";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
-    baseUrl: OPENAI_BASE_URL,
+    baseUrl: DEFAULT_CHANNEL_BASE_URL,
     apiKey: "",
     apiFormat: "openai",
     channels: [
         {
             id: "default",
-            name: "默认渠道",
-            baseUrl: OPENAI_BASE_URL,
+            name: DEFAULT_CHANNEL_NAME,
+            baseUrl: DEFAULT_CHANNEL_BASE_URL,
             apiKey: "",
             apiFormat: "openai",
             models: [
@@ -319,7 +323,7 @@ export function resolveModelChannel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     const model = decoded?.model || value;
     const matched = decoded ? config.channels.find((channel) => channel.id === decoded.channelId) : config.channels.find((channel) => channel.models.some((item) => item.name === model));
-    return matched || config.channels[0] || createModelChannel({ id: "default", name: "默认渠道", baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })) });
+    return matched || config.channels[0] || createModelChannel({ id: "default", name: DEFAULT_CHANNEL_NAME, baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })) });
 }
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
@@ -335,19 +339,21 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
 
 function normalizeChannels(config: AiConfig) {
     const persistedChannels = Array.isArray(config.channels) ? config.channels : [];
-    const channels = persistedChannels.map((channel, index) =>
-        createModelChannel({
+    const channels = persistedChannels.map((channel, index) => {
+        const isLegacyDefault = channel.id === "default" && channel.name === "默认渠道" && channel.baseUrl?.replace(/\/+$/, "") === OPENAI_BASE_URL;
+        return createModelChannel({
             ...channel,
             id: channel.id || (index === 0 ? "default" : `channel-${index + 1}`),
-            name: channel.name || (index === 0 ? "默认渠道" : `渠道 ${index + 1}`),
+            name: isLegacyDefault ? DEFAULT_CHANNEL_NAME : channel.name || (index === 0 ? DEFAULT_CHANNEL_NAME : `渠道 ${index + 1}`),
+            baseUrl: isLegacyDefault ? DEFAULT_CHANNEL_BASE_URL : channel.baseUrl,
             models: normalizeChannelModels(channel.models),
-        }),
-    );
+        });
+    });
     if (!channels.length) {
         channels.push(
             createModelChannel({
                 id: "default",
-                name: "默认渠道",
+                name: DEFAULT_CHANNEL_NAME,
                 baseUrl: config.baseUrl || defaultConfig.baseUrl,
                 apiKey: config.apiKey || "",
                 apiFormat: config.apiFormat || defaultConfig.apiFormat,
@@ -375,7 +381,18 @@ export function buildApiUrl(baseUrl: string, path: string) {
     normalizedBaseUrl = normalizeArkPlanBaseUrl(normalizedBaseUrl);
     const lowerBaseUrl = normalizedBaseUrl.toLowerCase();
     const apiBaseUrl = lowerBaseUrl.endsWith("/v1") || lowerBaseUrl.endsWith("/api/v3") || lowerBaseUrl.endsWith("/api/plan/v3") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
-    return `${apiBaseUrl}${path}`;
+    return proxyWeilaiUrl(`${apiBaseUrl}${path}`);
+}
+
+export function proxyWeilaiUrl(value: string) {
+    if (!AI_PROXY_BASE) return value;
+    try {
+        const url = new URL(value);
+        if (url.hostname.toLowerCase() !== new URL(DEFAULT_CHANNEL_BASE_URL).hostname) return value;
+        return `${AI_PROXY_BASE.replace(/\/+$/, "")}${url.pathname}${url.search}`;
+    } catch {
+        return value;
+    }
 }
 
 function normalizeArkPlanBaseUrl(baseUrl: string) {

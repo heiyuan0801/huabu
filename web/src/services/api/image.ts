@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { buildApiUrl, proxyWeilaiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
@@ -85,6 +85,16 @@ type ChatImageContentPart = {
 type ChatImageResponse = ImageApiResponse & {
     choices?: Array<{ message?: { content?: string | ChatImageContentPart[]; images?: ChatImageContentPart[] } }>;
 };
+type AsyncImageTask = {
+    id?: string;
+    task_id?: string;
+    status?: "processing" | "completed" | "failed";
+    image_url?: string;
+    result?: ImageApiResponse;
+    error?: { message?: string } | string;
+    message?: string;
+    msg?: string;
+};
 type GeminiPart = {
     text?: string;
     inlineData?: { mimeType?: string; data?: string };
@@ -131,6 +141,9 @@ const OPENAI_IMAGE_SIZES: Record<string, string[]> = {
     "4:3": ["2048x1536"],
     "3:4": ["1536x2048"],
 };
+const ASYNC_IMAGE_HOST = "api1.weilai.chat";
+const ASYNC_IMAGE_POLL_INTERVAL = 3000;
+const ASYNC_IMAGE_TIMEOUT = 30 * 60 * 1000;
 
 const GEMINI_SUPPORTED_RATIOS = ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"];
 const GEMINI_IMAGE_SIZE_BY_QUALITY: Record<string, string> = { low: "1K", medium: "2K", high: "4K", standard: "1K", hd: "2K" };
@@ -348,6 +361,67 @@ function aiHeaders(config: AiConfig, contentType?: string) {
         Authorization: `Bearer ${config.apiKey}`,
         ...(contentType ? { "Content-Type": contentType } : {}),
     };
+}
+
+function usesAsyncImageApi(config: Pick<AiConfig, "baseUrl">) {
+    try {
+        return new URL(config.baseUrl).hostname.toLowerCase() === ASYNC_IMAGE_HOST;
+    } catch {
+        return false;
+    }
+}
+
+function isAsyncImageApiUnavailable(error: unknown) {
+    if (!axios.isAxiosError<ImageApiResponse>(error)) return false;
+    if (error.response?.status === 404) return true;
+    const payload = error.response?.data;
+    const message = typeof payload?.error === "string" ? payload.error : payload?.error?.message || payload?.message || payload?.msg;
+    return message?.toLowerCase().includes("async image tasks are not enabled") || false;
+}
+
+async function requestAsyncImages(config: AiConfig, path: "/images/generations" | "/images/edits", body: Record<string, unknown> | FormData, options?: RequestOptions) {
+    const headers = aiHeaders(config, body instanceof FormData ? undefined : "application/json");
+    let created: AsyncImageTask;
+    try {
+        created = (await axios.post<AsyncImageTask>(aiApiUrl(config, `${path}/async`), body, { headers, signal: options?.signal })).data;
+    } catch (error) {
+        if (isAsyncImageApiUnavailable(error)) return null;
+        throw error;
+    }
+    const taskId = created.task_id || created.id;
+    if (!taskId) throw new Error("异步图片接口没有返回任务 ID");
+
+    const deadline = Date.now() + ASYNC_IMAGE_TIMEOUT;
+    for (;;) {
+        const task = (await axios.get<AsyncImageTask>(aiApiUrl(config, `/images/tasks/${encodeURIComponent(taskId)}`), { headers: aiHeaders(config), signal: options?.signal })).data;
+        if (task.status === "completed") {
+            return parseImagePayload(task.result || { data: task.image_url ? [{ url: task.image_url }] : [] }, config.baseUrl);
+        }
+        if (task.status === "failed") {
+            const message = typeof task.error === "string" ? task.error : task.error?.message;
+            throw new Error(message || task.msg || task.message || "图片生成失败");
+        }
+        if (Date.now() >= deadline) throw new Error("图片生成超时，请稍后重试");
+        await delay(Math.min(ASYNC_IMAGE_POLL_INTERVAL, deadline - Date.now()), options?.signal);
+    }
+}
+
+function delay(ms: number, signal?: AbortSignal) {
+    return new Promise<void>((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+        }
+        const onAbort = () => {
+            clearTimeout(timer);
+            reject(new DOMException("Aborted", "AbortError"));
+        };
+        const timer = setTimeout(() => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve();
+        }, ms);
+        signal?.addEventListener("abort", onAbort, { once: true });
+    });
 }
 
 function geminiBaseUrl(config: Pick<AiConfig, "baseUrl">) {
@@ -764,7 +838,7 @@ function readChatImageSources(content: string | ChatImageContentPart[] | ChatIma
 }
 
 function resolveImageUrl(source: string, baseUrl: string) {
-    return source.startsWith("/") ? new URL(source, baseUrl).toString() : source;
+    return proxyWeilaiUrl(source.startsWith("/") ? new URL(source, baseUrl).toString() : source);
 }
 
 function isGrokImageConfig(config: Pick<AiConfig, "model" | "imageModel" | "baseUrl">) {
@@ -782,16 +856,17 @@ function assertGrokImageConfig(config: AiConfig) {
 
 async function requestGrokGeneration(config: AiConfig, prompt: string, n: number, options?: RequestOptions) {
     assertGrokImageConfig(config);
-    const response = await axios.post<ImageApiResponse>(
-        aiApiUrl(config, "/images/generations"),
-        {
-            model: config.model,
-            prompt: withSystemPrompt(config, prompt),
-            n,
-            response_format: "url",
-        },
-        { headers: aiHeaders(config, "application/json"), signal: options?.signal },
-    );
+    const body = {
+        model: config.model,
+        prompt: withSystemPrompt(config, prompt),
+        n,
+        response_format: "url",
+    };
+    if (usesAsyncImageApi(config)) {
+        const images = await requestAsyncImages(config, "/images/generations", body, options);
+        if (images) return images;
+    }
+    const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/generations"), body, { headers: aiHeaders(config, "application/json"), signal: options?.signal });
     return parseImagePayload(response.data, config.baseUrl);
 }
 
@@ -801,15 +876,16 @@ async function requestGrokEdit(config: AiConfig, prompt: string, references: Ref
     if (!references.length) throw new Error("Grok 图片编辑需要一张参考图");
     if (references.length > 1) throw new Error("Grok 图片编辑暂只支持 1 张参考图");
     const image = await buildGrokImageReference(references[0]);
-    const response = await axios.post<ImageApiResponse>(
-        aiApiUrl(config, "/images/edits"),
-        {
-            model: config.model,
-            prompt: withSystemPrompt(config, prompt),
-            image: { ...image, type: "image_url" },
-        },
-        { headers: aiHeaders(config, "application/json"), signal: options?.signal },
-    );
+    const body = {
+        model: config.model,
+        prompt: withSystemPrompt(config, prompt),
+        image: { ...image, type: "image_url" },
+    };
+    if (usesAsyncImageApi(config)) {
+        const images = await requestAsyncImages(config, "/images/edits", body, options);
+        if (images) return images;
+    }
+    const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), body, { headers: aiHeaders(config, "application/json"), signal: options?.signal });
     return parseImagePayload(response.data, config.baseUrl);
 }
 
@@ -861,18 +937,23 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
     try {
+        const body = {
+            model: requestConfig.model,
+            prompt: withSystemPrompt(requestConfig, prompt),
+            n,
+            ...(quality ? { quality } : {}),
+            ...(requestSize ? { size: requestSize } : {}),
+            ...(background ? { background } : {}),
+            response_format: "b64_json",
+            output_format: IMAGE_OUTPUT_FORMAT,
+        };
+        if (usesAsyncImageApi(requestConfig)) {
+            const images = await requestAsyncImages(requestConfig, "/images/generations", body, options);
+            if (images) return images;
+        }
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(requestConfig, "/images/generations"),
-            {
-                model: requestConfig.model,
-                prompt: withSystemPrompt(requestConfig, prompt),
-                n,
-                ...(quality ? { quality } : {}),
-                ...(requestSize ? { size: requestSize } : {}),
-                ...(background ? { background } : {}),
-                response_format: "b64_json",
-                output_format: IMAGE_OUTPUT_FORMAT,
-            },
+            body,
             {
                 headers: aiHeaders(requestConfig, "application/json"),
                 signal: options?.signal,
@@ -956,6 +1037,10 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
+        if (usesAsyncImageApi(requestConfig)) {
+            const images = await requestAsyncImages(requestConfig, "/images/edits", formData, options);
+            if (images) return images;
+        }
         const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal });
         const images = parseImagePayload(response.data, requestConfig.baseUrl);
         return images;

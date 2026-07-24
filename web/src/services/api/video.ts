@@ -6,7 +6,7 @@ import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/fil
 import { imageToDataUrl } from "@/services/image-storage";
 import { buildGrokImageReference, isDefaultOpenAIBaseUrl, isGrokVideoConfig, normalizeGrokDuration, normalizeGrokVideoMode, type GrokVideoMode } from "@/lib/grok-video";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
-import { buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { buildApiUrl, modelOptionName, proxyWeilaiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -202,7 +202,7 @@ function parseFireflyVideoPayload(payload: FireflyChatResponse, baseUrl: string)
     ];
     const source = sources[0];
     if (!source) throw new Error("Firefly 接口没有返回视频");
-    const url = source.startsWith("/") ? new URL(source, baseUrl).toString() : source;
+    const url = proxyWeilaiUrl(source.startsWith("/") ? new URL(source, baseUrl).toString() : source);
     return { url, mimeType: source.startsWith("data:video/webm") || /\.webm(?:$|\?)/i.test(source) ? "video/webm" : "video/mp4" };
 }
 

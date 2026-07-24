@@ -50,4 +50,22 @@ export default defineConfig({
         __APP_VERSION__: JSON.stringify(localVersion),
         __APP_RELEASES__: JSON.stringify(parseChangelog(localChangelog)),
     },
+    server: {
+        proxy: {
+            "/ai-proxy": {
+                target: "https://api1.weilai.chat",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/ai-proxy/, ""),
+            },
+        },
+    },
+    preview: {
+        proxy: {
+            "/ai-proxy": {
+                target: "https://api1.weilai.chat",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/ai-proxy/, ""),
+            },
+        },
+    },
 });

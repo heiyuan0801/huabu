@@ -11,4 +11,6 @@ interface ImportMetaEnv {
     readonly VITE_ANALYTICS_GA4_ID?: string;
     // 百度统计站点 ID
     readonly VITE_ANALYTICS_BAIDU_ID?: string;
+    // 未来中转站同源代理前缀；Vite 开发环境默认使用 /ai-proxy
+    readonly VITE_AI_PROXY_BASE?: string;
 }
