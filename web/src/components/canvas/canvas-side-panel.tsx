@@ -9,12 +9,11 @@ import { exportCanvasNodes } from "@/lib/canvas/canvas-export";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { cn } from "@/lib/utils";
 import { PromptDetailDialog } from "@/pages/prompts/components/prompt-detail-dialog";
-import { fetchSourcePrompts, personalPromptToPrompt, type Prompt } from "@/services/api/prompts";
+import { fetchSourcePrompts, type Prompt } from "@/services/api/prompts";
 import { uploadMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
-import { usePromptStore } from "@/stores/use-prompt-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
@@ -30,6 +29,7 @@ type Props = {
     nodes: CanvasNodeData[];
     selectedNodeIds: Set<string>;
     onFocusNode: (nodeId: string) => void;
+    onPreviewNode: (nodeId: string) => void;
     onInsertAsset: (payload: InsertAssetPayload) => void;
 };
 
@@ -49,7 +49,7 @@ const STATUS_COLOR: Record<string, string> = {
     idle: "transparent",
 };
 
-export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onInsertAsset }: Props) {
+export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onInsertAsset }: Props) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [tab, setTab] = useState<PanelTab>("canvas");
     const width = useCanvasSidePanelStore((state) => state.width);
@@ -104,7 +104,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onInsertA
                 </div>
                 <div className="mt-2 min-h-0 flex-1 overflow-hidden">
                     {tab === "canvas" ? (
-                        <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} theme={theme} />
+                        <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} onPreviewNode={onPreviewNode} theme={theme} />
                     ) : tab === "assets" ? (
                         <CanvasAssetsTab onInsert={onInsertAsset} theme={theme} />
                     ) : (
@@ -145,7 +145,7 @@ function nodePreviewText(node: CanvasNodeData) {
     return getNodeDefinition(node.type)?.title || node.type;
 }
 
-function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, theme }: { nodes: CanvasNodeData[]; selectedNodeIds: Set<string>; onFocusNode: (nodeId: string) => void; theme: CanvasTheme }) {
+function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, theme }: { nodes: CanvasNodeData[]; selectedNodeIds: Set<string>; onFocusNode: (nodeId: string) => void; onPreviewNode: (nodeId: string) => void; theme: CanvasTheme }) {
     const { message } = App.useApp();
     const [keyword, setKeyword] = useState("");
     const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -217,23 +217,26 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, theme }: { nodes:
                             const isChecked = checked.has(node.id);
                             const active = selectMode ? isChecked : selectedNodeIds.has(node.id);
                             return (
-                                <button
-                                    key={node.id}
-                                    type="button"
-                                    onClick={() => (selectMode ? toggleChecked(node.id) : onFocusNode(node.id))}
-                                    className={cn("flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition", active ? "" : "hover:bg-black/5 dark:hover:bg-white/5")}
-                                    style={active ? { background: theme.toolbar.activeBg } : undefined}
-                                >
-                                    {selectMode ? <CheckMark checked={isChecked} theme={theme} /> : null}
-                                    <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-md">
-                                        {isImage ? <img src={node.metadata!.content} alt={node.title} className="size-full object-cover" /> : <Icon className="size-5 opacity-60" />}
-                                    </span>
-                                    <span className="min-w-0 flex-1 space-y-0.5">
-                                        <span className="block truncate text-sm font-medium leading-snug">{node.title || getNodeDefinition(node.type)?.title || "未命名节点"}</span>
-                                        <span className="block truncate text-xs leading-snug opacity-50">{nodePreviewText(node)}</span>
-                                    </span>
-                                    {node.metadata?.status && node.metadata.status !== "idle" ? <span className="size-1.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[node.metadata.status] || "transparent" }} /> : null}
-                                </button>
+                                <div key={node.id} className={cn("group flex w-full items-center rounded-lg transition", active ? "" : "hover:bg-black/5 dark:hover:bg-white/5")} style={active ? { background: theme.toolbar.activeBg } : undefined}>
+                                    <button type="button" onClick={() => (selectMode ? toggleChecked(node.id) : onFocusNode(node.id))} className="flex min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left" title={selectMode ? undefined : "定位到节点"}>
+                                        {selectMode ? <CheckMark checked={isChecked} theme={theme} /> : null}
+                                        <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-md">
+                                            {isImage ? <img src={node.metadata!.content} alt={node.title} className="size-full object-cover" /> : <Icon className="size-5 opacity-60" />}
+                                        </span>
+                                        <span className="min-w-0 flex-1 space-y-0.5">
+                                            <span className="block truncate text-sm font-medium leading-snug">{node.title || getNodeDefinition(node.type)?.title || "未命名节点"}</span>
+                                            <span className="block truncate text-xs leading-snug opacity-50">{nodePreviewText(node)}</span>
+                                        </span>
+                                        {node.metadata?.status && node.metadata.status !== "idle" ? <span className="size-1.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[node.metadata.status] || "transparent" }} /> : null}
+                                    </button>
+                                    {selectMode || !isImage ? null : (
+                                        <div className="flex shrink-0 flex-col items-center gap-0.5 pr-1.5">
+                                            <button type="button" onClick={() => onPreviewNode(node.id)} className="grid size-7 place-items-center rounded-md opacity-55 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label="放大预览" title="放大预览">
+                                                <Eye className="size-3.5" />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             );
                         })}
                     </div>
@@ -444,10 +447,9 @@ function AssetCover({ asset }: { asset: Asset }) {
 const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert, theme }: { onInsert: (payload: InsertAssetPayload) => void; theme: CanvasTheme }) {
     const { message } = App.useApp();
     const sources = usePromptSourceStore((state) => state.sources);
-    const personalPrompts = usePromptStore((state) => state.prompts);
     const enabledSources = useMemo(() => sources.filter((source) => source.enabled), [sources]);
     const [keyword, setKeyword] = useState("");
-    const [expanded, setExpanded] = useState<Record<string, boolean>>({ personal: true });
+    const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [detail, setDetail] = useState<Prompt | null>(null);
 
     const copyPrompt = async (prompt: string) => {
@@ -466,63 +468,25 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert, theme }: { o
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 <div className="space-y-1">
-                    <PersonalPromptGroup
-                        items={personalPrompts.map(personalPromptToPrompt)}
-                        keyword={keyword}
-                        open={!!expanded.personal}
-                        theme={theme}
-                        onToggle={() => setExpanded((prev) => ({ ...prev, personal: !prev.personal }))}
-                        onInsert={onInsert}
-                        onView={setDetail}
-                    />
-                    {enabledSources.length ? (
-                        <>
-                        {enabledSources.map((source) => (
-                            <PromptSourceGroup
-                                key={source.id}
-                                sourceId={source.id}
-                                sourceName={source.name}
-                                keyword={keyword}
-                                open={!!expanded[source.id]}
-                                theme={theme}
-                                onToggle={() => setExpanded((prev) => ({ ...prev, [source.id]: !prev[source.id] }))}
-                                onInsert={onInsert}
-                                onView={setDetail}
-                            />
-                        ))}
-                        </>
-                    ) : personalPrompts.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无提示词" className="pt-12" /> : null}
+                    {enabledSources.length ? enabledSources.map((source) => (
+                        <PromptSourceGroup
+                            key={source.id}
+                            sourceId={source.id}
+                            sourceName={source.name}
+                            keyword={keyword}
+                            open={!!expanded[source.id]}
+                            theme={theme}
+                            onToggle={() => setExpanded((prev) => ({ ...prev, [source.id]: !prev[source.id] }))}
+                            onInsert={onInsert}
+                            onView={setDetail}
+                        />
+                    )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无提示词" className="pt-12" />}
                 </div>
             </div>
             <PromptDetailDialog prompt={detail} onClose={() => setDetail(null)} onCopy={(prompt) => void copyPrompt(prompt)} />
         </div>
     );
 });
-
-function PersonalPromptGroup({ items, keyword, open, theme, onToggle, onInsert, onView }: { items: Prompt[]; keyword: string; open: boolean; theme: CanvasTheme; onToggle: () => void; onInsert: (payload: InsertAssetPayload) => void; onView: (prompt: Prompt) => void }) {
-    const showResults = open || !!keyword.trim();
-    const filtered = useMemo(() => {
-        const query = keyword.trim().toLowerCase();
-        return query ? items.filter((item) => [item.title, item.prompt, item.description, ...item.tags].join(" ").toLowerCase().includes(query)) : items;
-    }, [items, keyword]);
-
-    return (
-        <div>
-            <button type="button" onClick={onToggle} className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-xs font-semibold opacity-75 transition hover:opacity-100">
-                <ChevronRight className={cn("size-3.5 transition-transform", showResults && "rotate-90")} />
-                <BookOpen className="size-3.5" />
-                <span className="min-w-0 flex-1 truncate">我的提示词</span>
-                <span className="opacity-50">{filtered.length}</span>
-            </button>
-            {showResults ? (
-                <div className="space-y-1.5 px-1 pb-2 pt-1">
-                    {filtered.map((item) => <PromptRow key={item.id} item={item} theme={theme} onInsert={() => onInsert({ kind: "text", content: item.prompt, title: item.title })} onView={() => onView(item)} />)}
-                    {!filtered.length ? <div className="py-4 text-center text-xs opacity-40">{keyword.trim() ? "无匹配提示词" : "还没有保存提示词"}</div> : null}
-                </div>
-            ) : null}
-        </div>
-    );
-}
 
 function PromptSourceGroup({
     sourceId,
