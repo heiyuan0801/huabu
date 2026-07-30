@@ -13,4 +13,6 @@ interface ImportMetaEnv {
     readonly VITE_ANALYTICS_BAIDU_ID?: string;
     // 未来中转站同源代理前缀；Vite 开发环境默认使用 /ai-proxy
     readonly VITE_AI_PROXY_BASE?: string;
+    // 未来中转站生成媒体同源代理前缀
+    readonly VITE_MEDIA_PROXY_BASE?: string;
 }

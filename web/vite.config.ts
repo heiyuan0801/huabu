@@ -57,6 +57,11 @@ export default defineConfig({
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/ai-proxy/, ""),
             },
+            "/media-proxy": {
+                target: "http://157.254.18.147:6001",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/media-proxy/, ""),
+            },
         },
     },
     preview: {
@@ -65,6 +70,11 @@ export default defineConfig({
                 target: "https://api1.weilai.chat",
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/ai-proxy/, ""),
+            },
+            "/media-proxy": {
+                target: "http://157.254.18.147:6001",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/media-proxy/, ""),
             },
         },
     },

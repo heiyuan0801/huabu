@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
-import { AI_PROXY_BASE } from "@/constant/runtime-config";
+import { AI_PROXY_BASE, MEDIA_PROXY_BASE } from "@/constant/runtime-config";
 
 export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
@@ -67,6 +67,7 @@ export const DEFAULT_CHANNEL_BASE_URL = "https://api1.weilai.chat";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+const WEILAI_MEDIA_ORIGIN = "http://157.254.18.147:6001";
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
@@ -385,9 +386,12 @@ export function buildApiUrl(baseUrl: string, path: string) {
 }
 
 export function proxyWeilaiUrl(value: string) {
-    if (!AI_PROXY_BASE) return value;
     try {
         const url = new URL(value);
+        if (MEDIA_PROXY_BASE && url.origin === WEILAI_MEDIA_ORIGIN && url.pathname.startsWith("/generated/")) {
+            return `${MEDIA_PROXY_BASE.replace(/\/+$/, "")}${url.pathname}${url.search}`;
+        }
+        if (!AI_PROXY_BASE) return value;
         if (url.hostname.toLowerCase() !== new URL(DEFAULT_CHANNEL_BASE_URL).hostname) return value;
         return `${AI_PROXY_BASE.replace(/\/+$/, "")}${url.pathname}${url.search}`;
     } catch {

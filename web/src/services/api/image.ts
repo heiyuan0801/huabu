@@ -907,7 +907,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 params: { size: requestSize, quality, count: n, ...(background ? { background } : {}) },
                 signal: options?.signal,
             });
-            return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl }));
+            return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl: proxyWeilaiUrl(dataUrl) }));
         } catch (error) {
             throw new Error(readAxiosError(error, "请求失败"));
         }
@@ -986,7 +986,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                 params: { size: requestSize, quality, count: n, ...(background ? { background } : {}) },
                 signal: options?.signal,
             });
-            return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl }));
+            return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl: proxyWeilaiUrl(dataUrl) }));
         } catch (error) {
             throw new Error(readAxiosError(error, "请求失败"));
         }

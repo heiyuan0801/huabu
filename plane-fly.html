@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>飞机飞过天空</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      overflow: hidden;
+      background: linear-gradient(180deg, #1a6fb5 0%, #4da3e0 40%, #87ceeb 70%, #c8e6f5 100%);
+      font-family: system-ui, sans-serif;
+    }
+
+    /* 太阳 */
+    .sun {
+      position: absolute;
+      top: 60px;
+      right: 100px;
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #fff9c4, #ffd54f 50%, #ff9800);
+      box-shadow: 0 0 60px 20px rgba(255, 200, 50, 0.5);
+      animation: sunPulse 4s ease-in-out infinite;
+    }
+
+    @keyframes sunPulse {
+      0%, 100% { box-shadow: 0 0 60px 20px rgba(255, 200, 50, 0.5); }
+      50% { box-shadow: 0 0 80px 30px rgba(255, 200, 50, 0.7); }
+    }
+
+    /* 云朵 */
+    .cloud {
+      position: absolute;
+      background: #fff;
+      border-radius: 50px;
+      opacity: 0.85;
+    }
+
+    .cloud::before,
+    .cloud::after {
+      content: '';
+      position: absolute;
+      background: #fff;
+      border-radius: 50%;
+    }
+
+    .cloud-1 {
+      width: 120px; height: 40px;
+      top: 80px; left: -150px;
+      animation: cloudMove 40s linear infinite;
+    }
+    .cloud-1::before { width: 50px; height: 50px; top: -25px; left: 15px; }
+    .cloud-1::after  { width: 70px; height: 60px; top: -35px; left: 45px; }
+
+    .cloud-2 {
+      width: 160px; height: 50px;
+      top: 180px; left: -200px;
+      animation: cloudMove 55s linear 8s infinite;
+    }
+    .cloud-2::before { width: 60px; height: 60px; top: -30px; left: 20px; }
+    .cloud-2::after  { width: 80px; height: 70px; top: -40px; left: 55px; }
+
+    .cloud-3 {
+      width: 100px; height: 35px;
+      top: 300px; left: -130px;
+      animation: cloudMove 48s linear 20s infinite;
+    }
+    .cloud-3::before { width: 45px; height: 45px; top: -22px; left: 12px; }
+    .cloud-3::after  { width: 60px; height: 50px; top: -28px; left: 40px; }
+
+    .cloud-4 {
+      width: 140px; height: 45px;
+      top: 120px; left: -180px;
+      animation: cloudMove 62s linear 30s infinite;
+      opacity: 0.7;
+    }
+    .cloud-4::before { width: 55px; height: 55px; top: -28px; left: 18px; }
+    .cloud-4::after  { width: 75px; height: 65px; top: -38px; left: 50px; }
+
+    @keyframes cloudMove {
+      from { transform: translateX(0); }
+      to   { transform: translateX(calc(100vw + 300px)); }
+    }
+
+    /* 飞机 */
+    .plane-wrap {
+      position: absolute;
+      animation: fly 12s linear infinite;
+      will-change: transform;
+    }
+
+    .plane-wrap.plane-2 {
+      animation: fly2 18s linear 4s infinite;
+      transform: scale(0.7);
+      opacity: 0.9;
+    }
+
+    .plane-wrap.plane-3 {
+      animation: fly3 15s linear 9s infinite;
+      transform: scale(0.55);
+      opacity: 0.8;
+    }
+
+    @keyframes fly {
+      0%   { left: -200px; top: 30%; transform: rotate(-2deg); }
+      25%  { top: 25%; transform: rotate(1deg); }
+      50%  { top: 35%; transform: rotate(-1deg); }
+      75%  { top: 28%; transform: rotate(2deg); }
+      100% { left: calc(100vw + 100px); top: 32%; transform: rotate(-1deg); }
+    }
+
+    @keyframes fly2 {
+      0%   { left: -200px; top: 55%; transform: scale(0.7) rotate(1deg); }
+      30%  { top: 50%; }
+      60%  { top: 60%; }
+      100% { left: calc(100vw + 100px); top: 52%; transform: scale(0.7) rotate(-1deg); }
+    }
+
+    @keyframes fly3 {
+      0%   { left: -200px; top: 15%; transform: scale(0.55) rotate(-1deg); }
+      40%  { top: 20%; }
+      70%  { top: 12%; }
+      100% { left: calc(100vw + 100px); top: 18%; transform: scale(0.55) rotate(1deg); }
+    }
+
+    /* SVG 飞机主体 */
+    .plane {
+      width: 160px;
+      height: 60px;
+      filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.25));
+    }
+
+    /* 尾迹 */
+    .trail {
+      position: absolute;
+      right: 100%;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .trail span {
+      display: block;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.7);
+      animation: trailFade 0.8s ease-out infinite;
+    }
+
+    .trail span:nth-child(1) { width: 8px;  height: 8px;  animation-delay: 0s; }
+    .trail span:nth-child(2) { width: 12px; height: 12px; animation-delay: 0.15s; opacity: 0.6; }
+    .trail span:nth-child(3) { width: 16px; height: 16px; animation-delay: 0.3s;  opacity: 0.4; }
+    .trail span:nth-child(4) { width: 20px; height: 20px; animation-delay: 0.45s; opacity: 0.25; }
+    .trail span:nth-child(5) { width: 24px; height: 24px; animation-delay: 0.6s;  opacity: 0.12; }
+
+    @keyframes trailFade {
+      0%   { transform: scale(1);   opacity: inherit; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+
+    /* 标题 */
+    .title {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.85);
+      font-size: 1.4rem;
+      letter-spacing: 0.15em;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      user-select: none;
+    }
+
+    /* 地面 */
+    .ground {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 80px;
+      background: linear-gradient(180deg, #5cb85c 0%, #3d8b3d 100%);
+    }
+
+    .ground::before {
+      content: '';
+      position: absolute;
+      top: -20px;
+      left: 0;
+      right: 0;
+      height: 40px;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 20'%3E%3Cpath d='M0 20 Q25 0 50 20 Q75 0 100 20 Z' fill='%235cb85c'/%3E%3C/svg%3E") repeat-x;
+      background-size: 100px 40px;
+    }
+  </style>
+</head>
+<body>
+  <div class="sun"></div>
+
+  <div class="cloud cloud-1"></div>
+  <div class="cloud cloud-2"></div>
+  <div class="cloud cloud-3"></div>
+  <div class="cloud cloud-4"></div>
+
+  <!-- 飞机 1 -->
+  <div class="plane-wrap">
+    <div class="trail">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <svg class="plane" viewBox="0 0 160 60" xmlns="http://www.w3.org/2000/svg">
+      <!-- 机身 -->
+      <ellipse cx="80" cy="30" rx="70" ry="12" fill="#e8eef5"/>
+      <ellipse cx="80" cy="28" rx="70" ry="9" fill="#f5f8fc"/>
+      <!-- 机头 -->
+      <ellipse cx="145" cy="30" rx="14" ry="10" fill="#c0d0e0"/>
+      <!-- 驾驶舱 -->
+      <ellipse cx="120" cy="24" rx="16" ry="8" fill="#4fc3f7" opacity="0.85"/>
+      <ellipse cx="122" cy="22" rx="10" ry="5" fill="#81d4fa"/>
+      <!-- 主翼 -->
+      <path d="M55 30 L30 55 L70 38 Z" fill="#90a4ae"/>
+      <path d="M55 30 L30 5  L70 22 Z" fill="#b0bec5"/>
+      <!-- 尾翼 -->
+      <path d="M20 30 L5 10 L25 26 Z" fill="#78909c"/>
+      <path d="M20 30 L5 48 L25 34 Z" fill="#607d8b"/>
+      <!-- 窗户 -->
+      <circle cx="100" cy="28" r="3.5" fill="#29b6f6"/>
+      <circle cx="88"  cy="28" r="3.5" fill="#29b6f6"/>
+      <circle cx="76"  cy="28" r="3.5" fill="#29b6f6"/>
+      <!-- 引擎 -->
+      <ellipse cx="65" cy="40" rx="10" ry="5" fill="#546e7a"/>
+      <ellipse cx="65" cy="20" rx="10" ry="5" fill="#546e7a"/>
+    </svg>
+  </div>
+
+  <!-- 飞机 2 -->
+  <div class="plane-wrap plane-2">
+    <div class="trail">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <svg class="plane" viewBox="0 0 160 60" xmlns="http://www.w3.org/2000/svg">
+      <ellipse cx="80" cy="30" rx="70" ry="12" fill="#fff3e0"/>
+      <ellipse cx="80" cy="28" rx="70" ry="9" fill="#fff8f0"/>
+      <ellipse cx="145" cy="30" rx="14" ry="10" fill="#ffcc80"/>
+      <ellipse cx="120" cy="24" rx="16" ry="8" fill="#4fc3f7" opacity="0.85"/>
+      <ellipse cx="122" cy="22" rx="10" ry="5" fill="#81d4fa"/>
+      <path d="M55 30 L30 55 L70 38 Z" fill="#ef9a9a"/>
+      <path d="M55 30 L30 5  L70 22 Z" fill="#ef9a9a"/>
+      <path d="M20 30 L5 10 L25 26 Z" fill="#e57373"/>
+      <path d="M20 30 L5 48 L25 34 Z" fill="#ef5350"/>
+      <circle cx="100" cy="28" r="3.5" fill="#29b6f6"/>
+      <circle cx="88"  cy="28" r="3.5" fill="#29b6f6"/>
+      <circle cx="76"  cy="28" r="3.5" fill="#29b6f6"/>
+      <ellipse cx="65" cy="40" rx="10" ry="5" fill="#bf360c"/>
+      <ellipse cx="65" cy="20" rx="10" ry="5" fill="#bf360c"/>
+    </svg>
+  </div>
+
+  <!-- 飞机 3 -->
+  <div class="plane-wrap plane-3">
+    <div class="trail">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <svg class="plane" viewBox="0 0 160 60" xmlns="http://www.w3.org/2000/svg">
+      <ellipse cx="80" cy="30" rx="70" ry="12" fill="#e8f5e9"/>
+      <ellipse cx="80" cy="28" rx="70" ry="9" fill="#f1f8e9"/>
+      <ellipse cx="145" cy="30" rx="14" ry="10" fill="#a5d6a7"/>
+      <ellipse cx="120" cy="24" rx="16" ry="8" fill="#4fc3f7" opacity="0.85"/>
+      <ellipse cx="122" cy="22" rx="10" ry="5" fill="#81d4fa"/>
+      <path d="M55 30 L30 55 L70 38 Z" fill="#81c784"/>
+      <path d="M55 30 L30 5  L70 22 Z" fill="#a5d6a7"/>
+      <path d="M20 30 L5 10 L25 26 Z" fill="#66bb6a"/>
+      <path d="M20 30 L5 48 L25 34 Z" fill="#43a047"/>
+      <circle cx="100" cy="28" r="3.5" fill="#29b6f6"/>
+      <circle cx="88"  cy="28" r="3.5" fill="#29b6f6"/>
+      <circle cx="76"  cy="28" r="3.5" fill="#29b6f6"/>
+      <ellipse cx="65" cy="40" rx="10" ry="5" fill="#2e7d32"/>
+      <ellipse cx="65" cy="20" rx="10" ry="5" fill="#2e7d32"/>
+    </svg>
+  </div>
+
+  <div class="ground"></div>
+  <div class="title">✈ 飞机飞过蓝天</div>
+</body>
+</html>

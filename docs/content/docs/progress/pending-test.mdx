@@ -31,3 +31,4 @@ description: 当前版本已实现但仍需人工验证的变更项
 - Docker 本地构建：默认 `docker compose up -d --build` 使用当前源码和根目录 `Dockerfile` 构建 `infinite-canvas:local`，不再直接运行官方发布镜像。
 - 图片异步任务：未来中转站的 OpenAI / Grok 图片生成与编辑优先使用 `/v1/images/*/async`，每 3 秒轮询结果并最长等待 30 分钟；异步任务未启用或端点返回 404 时自动回退同步接口，其他渠道仍使用原同步接口。
 - 未来中转站同源代理：Vite 开发和 Docker 部署把 `https://api1.weilai.chat` 的模型、文本、图片、音频与视频请求改写到 `/ai-proxy`，其他渠道及未启用代理的纯静态部署保持浏览器直连。
+- 未来中转站生成图片代理：HTTPS 部署下，即使运行期 `config.js` 未加载，上游返回的 `http://157.254.18.147:6001/generated/*` 也应改写到同源 `/media-proxy/generated/*`，图片可正常预览并保存到浏览器本地。

@@ -18,6 +18,7 @@ cat > /usr/share/nginx/html/config.js <<EOF
 window.__RUNTIME_CONFIG__ = {
   ANALYTICS_GA4_ID: "${GA4_ID}",
   ANALYTICS_BAIDU_ID: "${BAIDU_ID}",
-  AI_PROXY_BASE: "/ai-proxy"
+  AI_PROXY_BASE: "/ai-proxy",
+  MEDIA_PROXY_BASE: "/media-proxy"
 };
 EOF
