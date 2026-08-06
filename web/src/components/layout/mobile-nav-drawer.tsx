@@ -1,6 +1,7 @@
 import { Drawer } from "antd";
 import { Megaphone } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { cn } from "@/lib/utils";
@@ -12,8 +13,10 @@ type MobileNavDrawerProps = {
 };
 
 export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDrawerProps) {
+    const { t } = useTranslation();
+
     return (
-        <Drawer title="导航" placement="left" size={280} open={open} onClose={onClose} className="md:hidden">
+        <Drawer title={t("topNav.navigation")} placement="left" size={280} open={open} onClose={onClose} className="md:hidden">
             <div className="space-y-1">
                 <div className="mb-3 flex items-start gap-2 rounded-lg bg-stone-50 px-3 py-2.5 text-sm text-stone-600 dark:bg-stone-900 dark:text-stone-300">
                     <Megaphone className="mt-0.5 size-4 shrink-0" />
@@ -33,7 +36,7 @@ export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDraw
                             )}
                         >
                             <Icon className="size-5" />
-                            <span>{tool.label}</span>
+                            <span>{t(`navigation.${tool.slug}`)}</span>
                         </Link>
                     );
                 })}

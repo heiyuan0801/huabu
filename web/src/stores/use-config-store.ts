@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
 import { AI_PROXY_BASE, MEDIA_PROXY_BASE } from "@/constant/runtime-config";
+import i18n from "@/i18n";
 
 export type ApiCallFormat = "openai" | "gemini" | "ark";
 export type ModelCapability = "image" | "video" | "text" | "audio";
@@ -61,7 +62,7 @@ export type WebdavSyncConfig = {
     directory: string;
     lastSyncedAt: string;
 };
-export type ConfigTabKey = "channels" | "preferences" | "prompt-sources" | "webdav";
+export type ConfigTabKey = "channels" | "preferences" | "prompt-sources" | "webdav" | "local-storage";
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export const DEFAULT_CHANNEL_NAME = "未来中转站";
@@ -284,7 +285,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
     const apiFormat = normalizeApiFormat(channel?.apiFormat);
     return {
         id: channel?.id?.trim() || nanoid(),
-        name: channel?.name?.trim() || "新渠道",
+        name: channel?.name?.trim() || i18n.t("config.channels.newName"),
         baseUrl: channel?.baseUrl?.trim() || defaultBaseUrlForApiFormat(apiFormat),
         apiKey: channel?.apiKey || "",
         apiFormat,
@@ -358,7 +359,7 @@ function normalizeChannels(config: AiConfig) {
         return createModelChannel({
             ...channel,
             id: channel.id || (index === 0 ? "default" : `channel-${index + 1}`),
-            name: isLegacyDefault ? DEFAULT_CHANNEL_NAME : channel.name || (index === 0 ? DEFAULT_CHANNEL_NAME : `渠道 ${index + 1}`),
+            name: isLegacyDefault ? DEFAULT_CHANNEL_NAME : channel.name || (index === 0 ? DEFAULT_CHANNEL_NAME : i18n.t("config.channels.indexedName", { index: index + 1 })),
             baseUrl: isLegacyDefault ? DEFAULT_CHANNEL_BASE_URL : channel.baseUrl,
             models: normalizeChannelModels(channel.models),
         });

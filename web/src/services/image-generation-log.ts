@@ -1,6 +1,7 @@
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 
+import i18n from "@/i18n";
 import type { UploadedImage } from "@/services/image-storage";
 import type { AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
@@ -39,7 +40,7 @@ export async function saveImageGenerationLog({
     await logStore.setItem(id, {
         id,
         createdAt,
-        title: prompt.slice(0, 12) || "未命名",
+        title: prompt.slice(0, 12) || i18n.t("workbench.untitled"),
         prompt,
         time: new Date(createdAt).toLocaleString("zh-CN", { hour12: false }),
         model,
@@ -51,7 +52,7 @@ export async function saveImageGenerationLog({
         imageCount: requestedCount,
         size: config.size,
         quality: config.quality,
-        status: storedImages.length ? "成功" : "失败",
+        status: storedImages.length ? "success" : "failed",
         images: storedImages,
         thumbnails: [],
     });
