@@ -40,6 +40,27 @@ export function readFileAsDataUrl(file: File) {
     });
 }
 
+export function convertImageDataUrl(dataUrl: string, mimeType = "image/png") {
+    return new Promise<string>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => {
+            try {
+                const canvas = document.createElement("canvas");
+                canvas.width = image.naturalWidth;
+                canvas.height = image.naturalHeight;
+                const context = canvas.getContext("2d");
+                if (!context) throw new Error(i18n.t("common.imageReadFailed"));
+                context.drawImage(image, 0, 0);
+                resolve(canvas.toDataURL(mimeType));
+            } catch (error) {
+                reject(error);
+            }
+        };
+        image.onerror = () => reject(new Error(i18n.t("common.imageReadFailed")));
+        image.src = dataUrl;
+    });
+}
+
 export function readImageMeta(dataUrl: string) {
     return new Promise<{ width: number; height: number; mimeType: string }>((resolve) => {
         const image = new Image();

@@ -7,6 +7,7 @@ import type { AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 
 const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
+type GenerationLogImage = Omit<UploadedImage, "storageKey"> & { storageKey?: string };
 
 export async function saveImageGenerationLog({
     prompt,
@@ -23,13 +24,13 @@ export async function saveImageGenerationLog({
     references: ReferenceImage[];
     durationMs: number;
     requestedCount: number;
-    images: Array<{ image: UploadedImage; durationMs: number }>;
+    images: Array<{ image: GenerationLogImage; durationMs: number }>;
 }) {
     const id = nanoid();
     const createdAt = Date.now();
     const storedImages = images.map(({ image, durationMs: imageDurationMs }) => ({
         id: nanoid(),
-        dataUrl: "",
+        dataUrl: image.storageKey ? "" : image.url,
         storageKey: image.storageKey,
         durationMs: imageDurationMs,
         width: image.width,

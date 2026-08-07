@@ -15,4 +15,6 @@ interface ImportMetaEnv {
     readonly VITE_AI_PROXY_BASE?: string;
     // 未来中转站生成媒体同源代理前缀
     readonly VITE_MEDIA_PROXY_BASE?: string;
+    // 未来中转站任务图片同源代理前缀
+    readonly VITE_IMAGE_PROXY_BASE?: string;
 }

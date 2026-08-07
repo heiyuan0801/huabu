@@ -62,6 +62,11 @@ export default defineConfig({
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/media-proxy/, ""),
             },
+            "/image-proxy": {
+                target: "https://image.weilai.uk",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/image-proxy/, ""),
+            },
         },
     },
     preview: {
@@ -75,6 +80,11 @@ export default defineConfig({
                 target: "http://157.254.18.147:6001",
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/media-proxy/, ""),
+            },
+            "/image-proxy": {
+                target: "https://image.weilai.uk",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/image-proxy/, ""),
             },
         },
     },

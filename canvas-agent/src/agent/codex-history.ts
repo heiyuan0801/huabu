@@ -687,6 +687,8 @@ function routeName(path: string) {
     if (path === "/") return "首页";
     if (path === "/canvas") return "画布页面";
     if (path.startsWith("/canvas/")) return "指定画布";
+    if (path.startsWith("/image-chat")) return "图片聊天";
+    if (path.startsWith("/ecommerce")) return "电商生图";
     if (path.startsWith("/image")) return "生图工作台";
     if (path.startsWith("/video")) return "视频工作台";
     if (path.startsWith("/prompts")) return "提示词中心";

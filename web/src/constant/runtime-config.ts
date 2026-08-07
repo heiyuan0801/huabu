@@ -10,6 +10,7 @@ type RuntimeConfig = {
     ANALYTICS_BAIDU_ID?: string; // Baidu Analytics site ID
     AI_PROXY_BASE?: string;
     MEDIA_PROXY_BASE?: string;
+    IMAGE_PROXY_BASE?: string;
 };
 
 declare global {
@@ -31,3 +32,4 @@ export const ANALYTICS_GA4_ID = read("ANALYTICS_GA4_ID", import.meta.env.VITE_AN
 export const ANALYTICS_BAIDU_ID = read("ANALYTICS_BAIDU_ID", import.meta.env.VITE_ANALYTICS_BAIDU_ID);
 export const AI_PROXY_BASE = read("AI_PROXY_BASE", import.meta.env.VITE_AI_PROXY_BASE, import.meta.env.DEV ? "/ai-proxy" : "");
 export const MEDIA_PROXY_BASE = read("MEDIA_PROXY_BASE", import.meta.env.VITE_MEDIA_PROXY_BASE, "/media-proxy");
+export const IMAGE_PROXY_BASE = read("IMAGE_PROXY_BASE", import.meta.env.VITE_IMAGE_PROXY_BASE, "/image-proxy");

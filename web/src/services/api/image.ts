@@ -118,6 +118,20 @@ type GeminiPayload = {
 type GeminiStreamState = { buffer: string; text: string; toolCalls: ResponseToolCall[]; error?: string };
 type RequestOptions = { signal?: AbortSignal };
 
+class ImageApiRequestError extends Error {
+    retryable: boolean;
+
+    constructor(message: string, status?: number) {
+        super(message);
+        this.name = "ImageApiRequestError";
+        this.retryable = status === 502 || status === 503 || /temporarily unavailable|service unavailable|server busy|overloaded|服务暂时不可用|服务繁忙|网关错误/i.test(message);
+    }
+}
+
+export function isRetryableImageError(error: unknown) {
+    return error instanceof ImageApiRequestError && error.retryable;
+}
+
 const QUALITY_BASE: Record<string, number> = {
     low: 1024,
     medium: 2048,
@@ -376,20 +390,22 @@ function readApiErrorMessage(value: unknown): string {
 }
 
 function readAxiosError(error: unknown, fallback: string) {
-    if (axios.isCancel(error)) return apiText("requestCanceled");
+    if (error instanceof ImageApiRequestError) return error;
+    if (axios.isCancel(error)) return new ImageApiRequestError(apiText("requestCanceled"));
     if (axios.isAxiosError(error)) {
         const responseData = error.response?.data;
         // Prefer the API error from the response body.
         const apiMsg = readApiErrorMessage(responseData);
-        if (apiMsg) return apiMsg;
+        if (apiMsg) return new ImageApiRequestError(apiMsg, error.response?.status);
         // Infer the error from the HTTP status when the response body has no usable message.
         const statusMsg = readStatusError(error.response?.status, fallback);
-        if (statusMsg) return statusMsg;
+        if (statusMsg) return new ImageApiRequestError(statusMsg, error.response?.status);
         // Fall back to Axios's own error message.
-        return error.message || fallback;
+        return new ImageApiRequestError(error.message || fallback, error.response?.status);
     }
-    if (error instanceof DOMException && error.name === "AbortError") return apiText("requestCanceled");
-    return error instanceof Error ? readApiErrorMessage(error.message) || error.message : fallback;
+    if (error instanceof DOMException && error.name === "AbortError") return error;
+    const message = error instanceof Error ? readApiErrorMessage(error.message) || error.message : fallback;
+    return new ImageApiRequestError(message);
 }
 
 function readStatusError(status: number | undefined, fallback: string) {
@@ -963,28 +979,28 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             });
             return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl: proxyWeilaiUrl(dataUrl) }));
         } catch (error) {
-            throw new Error(readAxiosError(error, apiText("requestFailed")));
+            throw readAxiosError(error, apiText("requestFailed"));
         }
     }
     if (requestConfig.apiFormat === "gemini") {
         try {
             return await requestGeminiImages(requestConfig, prompt, [], n, options);
         } catch (error) {
-            throw new Error(readAxiosError(error, apiText("requestFailed")));
+            throw readAxiosError(error, apiText("requestFailed"));
         }
     }
     if (isFireflyImageModel(requestConfig.model)) {
         try {
             return await requestFireflyImages(requestConfig, prompt, [], n, options);
         } catch (error) {
-            throw new Error(readAxiosError(error, "请求失败"));
+            throw readAxiosError(error, "请求失败");
         }
     }
     if (isGrokImageConfig(requestConfig)) {
         try {
             return await requestGrokGeneration(requestConfig, prompt, n, options);
         } catch (error) {
-            throw new Error(readAxiosError(error, "请求失败"));
+            throw readAxiosError(error, "请求失败");
         }
     }
     const quality = normalizeQuality(config.quality);
@@ -1016,7 +1032,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
         const images = parseImagePayload(response.data, requestConfig.baseUrl);
         return images;
     } catch (error) {
-        throw new Error(readAxiosError(error, apiText("requestFailed")));
+        throw readAxiosError(error, apiText("requestFailed"));
     }
 }
 
@@ -1042,7 +1058,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
             });
             return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl: proxyWeilaiUrl(dataUrl) }));
         } catch (error) {
-            throw new Error(readAxiosError(error, apiText("requestFailed")));
+            throw readAxiosError(error, apiText("requestFailed"));
         }
     }
     if (requestConfig.apiFormat === "gemini") {
@@ -1050,7 +1066,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         try {
             return await requestGeminiImages(requestConfig, requestPrompt, references, n, options);
         } catch (error) {
-            throw new Error(readAxiosError(error, apiText("requestFailed")));
+            throw readAxiosError(error, apiText("requestFailed"));
         }
     }
     if (isFireflyImageModel(requestConfig.model)) {
@@ -1058,14 +1074,14 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         try {
             return await requestFireflyImages(requestConfig, requestPrompt, references, n, options);
         } catch (error) {
-            throw new Error(readAxiosError(error, "请求失败"));
+            throw readAxiosError(error, "请求失败");
         }
     }
     if (isGrokImageConfig(requestConfig)) {
         try {
             return await requestGrokEdit(requestConfig, requestPrompt, references, mask, options);
         } catch (error) {
-            throw new Error(readAxiosError(error, "请求失败"));
+            throw readAxiosError(error, "请求失败");
         }
     }
 
@@ -1096,7 +1112,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
             );
             return parseImagePayload(response.data, requestConfig.baseUrl);
         } catch (error) {
-            throw new Error(readAxiosError(error, apiText("requestFailed")));
+            throw readAxiosError(error, apiText("requestFailed"));
         }
     }
     const quality = normalizeQuality(config.quality);
@@ -1130,7 +1146,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         const images = parseImagePayload(response.data, requestConfig.baseUrl);
         return images;
     } catch (error) {
-        throw new Error(readAxiosError(error, apiText("requestFailed")));
+        throw readAxiosError(error, apiText("requestFailed"));
     }
 }
 
@@ -1151,7 +1167,7 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
             if (text === apiText("noContent")) onDelta(text);
             return text;
         } catch (error) {
-            throw new Error(readAxiosError(error, apiText("requestFailed")));
+            throw readAxiosError(error, apiText("requestFailed"));
         }
     }
     try {
@@ -1168,7 +1184,7 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
         if (answer === apiText("noContent")) onDelta(answer);
         return answer;
     } catch (error) {
-        throw new Error(readAxiosError(error, apiText("requestFailed")));
+        throw readAxiosError(error, apiText("requestFailed"));
     }
 }
 
@@ -1192,7 +1208,7 @@ export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKe
             .filter((id): id is string => Boolean(id))
             .sort((a, b) => a.localeCompare(b));
     } catch (error) {
-        throw new Error(readAxiosError(error, apiText("modelReadFailed")));
+        throw readAxiosError(error, apiText("modelReadFailed"));
     }
 }
 

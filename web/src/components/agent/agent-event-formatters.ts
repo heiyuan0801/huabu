@@ -413,6 +413,8 @@ export function routeName(path: string) {
     if (path === "/") return tr("routes.home");
     if (path === "/canvas") return tr("routes.canvas");
     if (path.startsWith("/canvas/")) return tr("routes.canvasProject");
+    if (path.startsWith("/image-chat")) return tr("routes.imageChat");
+    if (path.startsWith("/ecommerce")) return tr("routes.ecommerce");
     if (path.startsWith("/image")) return tr("routes.image");
     if (path.startsWith("/video")) return tr("routes.video");
     if (path.startsWith("/prompts")) return tr("routes.prompts");

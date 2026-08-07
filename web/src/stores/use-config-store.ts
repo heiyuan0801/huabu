@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
-import { AI_PROXY_BASE, MEDIA_PROXY_BASE } from "@/constant/runtime-config";
+import { AI_PROXY_BASE, IMAGE_PROXY_BASE, MEDIA_PROXY_BASE } from "@/constant/runtime-config";
 import i18n from "@/i18n";
 
 export type ApiCallFormat = "openai" | "gemini" | "ark";
@@ -70,7 +70,8 @@ export const DEFAULT_CHANNEL_BASE_URL = "https://api1.weilai.chat";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
-const WEILAI_MEDIA_ORIGIN = "http://157.254.18.147:6001";
+const WEILAI_MEDIA_HOSTS = new Set(["157.254.18.147", "api1.weilai.chat"]);
+const WEILAI_TASK_IMAGE_HOST = "image.weilai.uk";
 const ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 
 export const defaultConfig: AiConfig = {
@@ -404,7 +405,10 @@ export function buildApiUrl(baseUrl: string, path: string) {
 export function proxyWeilaiUrl(value: string) {
     try {
         const url = new URL(value);
-        if (MEDIA_PROXY_BASE && url.origin === WEILAI_MEDIA_ORIGIN && url.pathname.startsWith("/generated/")) {
+        if (IMAGE_PROXY_BASE && url.hostname.toLowerCase() === WEILAI_TASK_IMAGE_HOST && url.pathname.startsWith("/images/")) {
+            return `${IMAGE_PROXY_BASE.replace(/\/+$/, "")}${url.pathname}${url.search}`;
+        }
+        if (MEDIA_PROXY_BASE && WEILAI_MEDIA_HOSTS.has(url.hostname.toLowerCase()) && url.pathname.startsWith("/generated/")) {
             return `${MEDIA_PROXY_BASE.replace(/\/+$/, "")}${url.pathname}${url.search}`;
         }
         if (!AI_PROXY_BASE) return value;

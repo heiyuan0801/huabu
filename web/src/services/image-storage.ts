@@ -16,6 +16,8 @@ export type UploadedImage = {
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
 const imageLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
 const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
+const imageChatStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_chat" });
+const ecommerceProjectStore = localforage.createInstance({ name: "infinite-canvas", storeName: "ecommerce_project" });
 const objectUrls = new Map<string, string>();
 
 export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
@@ -74,6 +76,12 @@ export async function cleanupUnusedImages(usedData: unknown) {
             collectImageStorageKeys(value, usedKeys);
         }),
         videoLogStore.iterate((value) => {
+            collectImageStorageKeys(value, usedKeys);
+        }),
+        imageChatStore.iterate((value) => {
+            collectImageStorageKeys(value, usedKeys);
+        }),
+        ecommerceProjectStore.iterate((value) => {
             collectImageStorageKeys(value, usedKeys);
         }),
     ]);

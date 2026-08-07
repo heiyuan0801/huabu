@@ -1,4 +1,4 @@
-import { FileText, ImagePlus, Images, Maximize2, Settings2, Video } from "lucide-react";
+import { FileText, ImagePlus, Images, Maximize2, MessageSquareMore, Settings2, ShoppingBag, Video } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -8,6 +8,14 @@ export const navigationTools = [
     {
         slug: "image",
         icon: ImagePlus,
+    },
+    {
+        slug: "image-chat",
+        icon: MessageSquareMore,
+    },
+    {
+        slug: "ecommerce",
+        icon: ShoppingBag,
     },
     {
         slug: "video",
