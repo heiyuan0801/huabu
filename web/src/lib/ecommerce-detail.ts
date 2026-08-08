@@ -1,6 +1,13 @@
+import { ECOMMERCE_SCENE_ROLES, ECOMMERCE_SCENE_TEMPLATES, type EcommerceSceneRole, type EcommerceSceneTemplateId } from "@/lib/ecommerce-templates";
+
 export type DetailPlanSection = {
     title: string;
     prompt: string;
+    role: EcommerceSceneRole;
+    templateId: EcommerceSceneTemplateId;
+    variantId: string;
+    headline: string;
+    body: string;
 };
 
 export type DetailImageOverlay = {
@@ -17,7 +24,15 @@ export function parseDetailPlan(value: string, count: number): DetailPlanSection
         const parsed = JSON.parse(value.slice(start, end + 1));
         if (!Array.isArray(parsed)) return null;
         const sections = parsed
-            .map((item) => ({ title: typeof item?.title === "string" ? item.title.trim() : "", prompt: typeof item?.prompt === "string" ? item.prompt.trim() : "" }))
+            .map((item) => ({
+                title: typeof item?.title === "string" ? item.title.trim() : "",
+                prompt: typeof item?.prompt === "string" ? item.prompt.trim() : "",
+                role: ECOMMERCE_SCENE_ROLES.includes(item?.role) ? (item.role as EcommerceSceneRole) : "feature",
+                templateId: ECOMMERCE_SCENE_TEMPLATES.some((template) => template.id === item?.templateId) ? (item.templateId as EcommerceSceneTemplateId) : "hero-image",
+                variantId: typeof item?.variantId === "string" ? item.variantId.trim() : "",
+                headline: typeof item?.headline === "string" ? item.headline.trim() : "",
+                body: typeof item?.body === "string" ? item.body.trim() : "",
+            }))
             .filter((item) => item.title && item.prompt)
             .slice(0, count);
         return sections.length === count ? sections : null;

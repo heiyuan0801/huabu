@@ -2,6 +2,7 @@ import localforage from "localforage";
 import { useEffect, useRef, useState } from "react";
 
 import i18n from "@/i18n";
+import type { EcommerceChannel, EcommerceConversionDriver, EcommerceCopyLocale, EcommerceMarket, EcommerceMarketMode, EcommercePackageType, EcommerceSceneRole, EcommerceSceneTemplateId, EcommerceTemplateMode, EcommerceVisualPreset } from "@/lib/ecommerce-templates";
 import { resolveImageUrl } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
 
@@ -20,6 +21,13 @@ export type CommerceSection = {
     id: string;
     title: string;
     prompt: string;
+    directionPrompt: string;
+    styleLock: string;
+    role: EcommerceSceneRole;
+    templateId: EcommerceSceneTemplateId;
+    variantId: string;
+    antiAiEnabled: boolean;
+    marketBrief: string;
     status: "pending" | "success" | "error" | "canceled";
     image?: CommerceImage;
     sourceImage?: CommerceImage;
@@ -34,6 +42,22 @@ export type CommerceSection = {
 export type EcommerceProject = {
     reference: ReferenceImage | null;
     productInfo: string;
+    packageType: EcommercePackageType;
+    conversionDriver: EcommerceConversionDriver;
+    visualPreset: EcommerceVisualPreset;
+    templateMode: EcommerceTemplateMode;
+    sceneTemplateId: EcommerceSceneTemplateId;
+    sceneVariantId: string;
+    antiAiEnabled: boolean;
+    marketMode: EcommerceMarketMode;
+    targetChannel: EcommerceChannel;
+    targetMarket: EcommerceMarket;
+    copyLocale: EcommerceCopyLocale;
+    audienceProfile: string;
+    offerDetails: string;
+    complianceEnabled: boolean;
+    styleLock: string;
+    proofPoints: string;
     sectionCount: number;
     ratio: string;
     sections: CommerceSection[];
@@ -43,7 +67,7 @@ export type EcommerceProject = {
     sliceHeight: number;
 };
 
-type StoredEcommerceProject = EcommerceProject & { version: 1 };
+type StoredEcommerceProject = EcommerceProject & { version: 5 };
 
 const PROJECT_KEY = "current-project";
 const projectStore = localforage.createInstance({ name: "infinite-canvas", storeName: "ecommerce_project" });
@@ -56,7 +80,7 @@ function serializeImage(image?: CommerceImage | null) {
 function serializeProject(project: EcommerceProject): StoredEcommerceProject {
     return {
         ...project,
-        version: 1,
+        version: 5,
         reference: project.reference ? { ...project.reference, dataUrl: project.reference.storageKey ? "" : project.reference.dataUrl } : null,
         longImage: serializeImage(project.longImage) || null,
         sections: project.sections.map((section) => ({
@@ -97,7 +121,7 @@ async function hydrateProject(project: StoredEcommerceProject): Promise<Ecommerc
     const reference = project.reference
         ? { ...project.reference, dataUrl: await resolveImageUrl(project.reference.storageKey, project.reference.dataUrl) }
         : null;
-    return { ...project, reference, sections, longImage: (await hydrateImage(project.longImage)) || null };
+    return { ...project, marketMode: project.marketMode || "domestic", reference, sections, longImage: (await hydrateImage(project.longImage)) || null };
 }
 
 export function useEcommerceProjectPersistence(project: EcommerceProject, onRestore: (project: EcommerceProject) => void) {
@@ -110,7 +134,7 @@ export function useEcommerceProjectPersistence(project: EcommerceProject, onRest
         void projectStore
             .getItem<StoredEcommerceProject>(PROJECT_KEY)
             .then(async (stored) => {
-                if (stored?.version !== 1) return;
+                if (stored?.version !== 5) return;
                 const project = await hydrateProject(stored);
                 if (!canceled) restoreRef.current(project);
             })

@@ -8,6 +8,36 @@ import { useTranslation } from "react-i18next";
 import { ModelPicker } from "@/components/model-picker";
 import { ImageGenerationPlaceholder } from "@/components/image-generation-placeholder";
 import { mapWithConcurrency, parseDetailPlan, sliceVerticalImage, stitchVerticalImages, type DetailPlanSection } from "@/lib/ecommerce-detail";
+import {
+    buildCampaignStyleLock,
+    buildCrossBorderMarketBrief,
+    buildEcommerceSectionPrompt,
+    ECOMMERCE_CHANNELS,
+    ECOMMERCE_CONVERSION_DRIVERS,
+    ECOMMERCE_COPY_LOCALES,
+    ECOMMERCE_MARKETS,
+    ECOMMERCE_PACKAGE_TYPES,
+    ECOMMERCE_SCENE_TEMPLATES,
+    ECOMMERCE_VISUAL_PRESETS,
+    getConversionHint,
+    getDefaultTemplateForRole,
+    getEcommerceSceneTemplate,
+    getPackageSequenceHint,
+    getSceneRoleLibrary,
+    getSceneTemplateCatalog,
+    getSceneTemplateLabel,
+    matchEcommerceSceneTemplate,
+    type EcommerceChannel,
+    type EcommerceConversionDriver,
+    type EcommerceCopyLocale,
+    type EcommerceMarket,
+    type EcommerceMarketMode,
+    type EcommercePackageType,
+    type EcommerceSceneRole,
+    type EcommerceSceneTemplateId,
+    type EcommerceTemplateMode,
+    type EcommerceVisualPreset,
+} from "@/lib/ecommerce-templates";
 import { convertImageDataUrl, formatDuration, getDataUrlByteSize, readFileAsDataUrl } from "@/lib/image-utils";
 import { createZip } from "@/lib/zip";
 import { isRetryableImageError, requestEdit, requestImageQuestion } from "@/services/api/image";
@@ -21,6 +51,8 @@ import { useEcommerceProjectPersistence, type CommerceImage, type CommerceSectio
 const TRANSIENT_RETRY_DELAYS = [1500, 3000];
 const EXPORT_PRESETS: Record<string, number> = { taobao: 750, jd: 790, pdd: 750, douyin: 750, hd: 1080 };
 const FALLBACK_STAGE_KEYS = ["hero", "benefit", "benefitExtra", "material", "detail", "scene", "trust", "closing"] as const;
+const FALLBACK_STAGE_ROLES: EcommerceSceneRole[] = ["hero", "feature", "feature", "macro", "macro", "scene", "trust", "trust"];
+const TEMPLATE_GROUPS = ["product", "marketing", "information", "people", "technical", "campaign"] as const;
 const FALLBACK_STAGE_INDEXES: Record<number, number[]> = {
     3: [0, 1, 7],
     4: [0, 1, 5, 7],
@@ -88,6 +120,22 @@ export default function EcommercePage() {
     const updateAsset = useAssetStore((state) => state.updateAsset);
     const [reference, setReference] = useState<ReferenceImage | null>(null);
     const [productInfo, setProductInfo] = useState("");
+    const [packageType, setPackageType] = useState<EcommercePackageType>("detail");
+    const [conversionDriver, setConversionDriver] = useState<EcommerceConversionDriver>("visual");
+    const [visualPreset, setVisualPreset] = useState<EcommerceVisualPreset>("clean");
+    const [templateMode, setTemplateMode] = useState<EcommerceTemplateMode>("auto");
+    const [sceneTemplateId, setSceneTemplateId] = useState<EcommerceSceneTemplateId>("hero-image");
+    const [sceneVariantId, setSceneVariantId] = useState("");
+    const [antiAiEnabled, setAntiAiEnabled] = useState(true);
+    const [marketMode, setMarketMode] = useState<EcommerceMarketMode>("domestic");
+    const [targetChannel, setTargetChannel] = useState<EcommerceChannel>("amazon");
+    const [targetMarket, setTargetMarket] = useState<EcommerceMarket>("us");
+    const [copyLocale, setCopyLocale] = useState<EcommerceCopyLocale>("en-US");
+    const [audienceProfile, setAudienceProfile] = useState("");
+    const [offerDetails, setOfferDetails] = useState("");
+    const [complianceEnabled, setComplianceEnabled] = useState(true);
+    const [styleLock, setStyleLock] = useState("");
+    const [proofPoints, setProofPoints] = useState("");
     const [sectionCount, setSectionCount] = useState(5);
     const [ratio, setRatio] = useState("3:4");
     const [sections, setSections] = useState<CommerceSection[]>([]);
@@ -109,14 +157,40 @@ export default function EcommercePage() {
     const imageModel = effectiveConfig.imageModel || effectiveConfig.model;
     const textModel = effectiveConfig.textModel || effectiveConfig.model;
     const productTitle = productInfo.trim().split(/\n|，|。/)[0]?.slice(0, 24) || t("ecommerce.untitledProduct");
+    const campaignStyleLock = useMemo(() => buildCampaignStyleLock(visualPreset, ratio, styleLock), [ratio, styleLock, visualPreset]);
+    const marketBrief = useMemo(
+        () => marketMode === "cross-border" ? buildCrossBorderMarketBrief({ channel: targetChannel, market: targetMarket, copyLocale, audienceProfile, offerDetails, complianceEnabled }) : "",
+        [audienceProfile, complianceEnabled, copyLocale, marketMode, offerDetails, targetChannel, targetMarket],
+    );
+    const selectedSceneTemplate = getEcommerceSceneTemplate(sceneTemplateId);
+    const sceneTemplateOptions = TEMPLATE_GROUPS.map((group) => ({
+        label: t(`ecommerce.templateGroups.${group}`),
+        options: ECOMMERCE_SCENE_TEMPLATES.filter((template) => template.group === group).map((template) => ({ value: template.id, label: `${String(ECOMMERCE_SCENE_TEMPLATES.indexOf(template) + 1).padStart(2, "0")} ${template.name}` })),
+    }));
     const projectSnapshot = useMemo(
-        () => ({ reference, productInfo, sectionCount, ratio, sections, longImage, overlayEnabled, exportPreset, sliceHeight }),
-        [exportPreset, longImage, overlayEnabled, productInfo, ratio, reference, sectionCount, sections, sliceHeight],
+        () => ({ reference, productInfo, packageType, conversionDriver, visualPreset, templateMode, sceneTemplateId, sceneVariantId, antiAiEnabled, marketMode, targetChannel, targetMarket, copyLocale, audienceProfile, offerDetails, complianceEnabled, styleLock, proofPoints, sectionCount, ratio, sections, longImage, overlayEnabled, exportPreset, sliceHeight }),
+        [antiAiEnabled, audienceProfile, complianceEnabled, conversionDriver, copyLocale, exportPreset, longImage, marketMode, offerDetails, overlayEnabled, packageType, productInfo, proofPoints, ratio, reference, sceneTemplateId, sceneVariantId, sectionCount, sections, sliceHeight, styleLock, targetChannel, targetMarket, templateMode, visualPreset],
     );
 
     const projectHydrated = useEcommerceProjectPersistence(projectSnapshot, (project) => {
         setReference(project.reference);
         setProductInfo(project.productInfo);
+        setPackageType(project.packageType || "detail");
+        setConversionDriver(project.conversionDriver || "visual");
+        setVisualPreset(project.visualPreset || "clean");
+        setTemplateMode(project.templateMode || "auto");
+        setSceneTemplateId(project.sceneTemplateId || "hero-image");
+        setSceneVariantId(project.sceneVariantId || "");
+        setAntiAiEnabled(project.antiAiEnabled ?? true);
+        setMarketMode(project.marketMode || "domestic");
+        setTargetChannel(project.targetChannel || "amazon");
+        setTargetMarket(project.targetMarket || "us");
+        setCopyLocale(project.copyLocale || "en-US");
+        setAudienceProfile(project.audienceProfile || "");
+        setOfferDetails(project.offerDetails || "");
+        setComplianceEnabled(project.complianceEnabled ?? true);
+        setStyleLock(project.styleLock || "");
+        setProofPoints(project.proofPoints || "");
         setSectionCount(project.sectionCount);
         setRatio(project.ratio);
         sectionsRef.current = project.sections;
@@ -222,7 +296,17 @@ export default function EcommercePage() {
     const createFallbackPlan = () =>
         (FALLBACK_STAGE_INDEXES[sectionCount] || FALLBACK_STAGE_INDEXES[5]).map((stageIndex) => {
             const title = t(`ecommerce.fallbackStages.${FALLBACK_STAGE_KEYS[stageIndex]}`);
-            return { title, prompt: t("ecommerce.fallbackPrompt", { product: productInfo.trim(), ratio, focus: title }) };
+            const role = FALLBACK_STAGE_ROLES[stageIndex];
+            const templateId = templateMode === "manual" ? sceneTemplateId : matchEcommerceSceneTemplate(productInfo, role) || getDefaultTemplateForRole(role);
+            return {
+                title,
+                role,
+                templateId,
+                variantId: templateMode === "manual" ? sceneVariantId : "",
+                headline: title,
+                body: "",
+                prompt: t("ecommerce.fallbackPrompt", { focus: title, packageType: t(`ecommerce.packageTypes.${packageType}`), conversionDriver: t(`ecommerce.conversionDrivers.${conversionDriver}`) }),
+            };
         });
 
     const generatedAsset = (image: CommerceImage, title: string, metadata: Record<string, unknown>) => ({
@@ -310,12 +394,13 @@ export default function EcommercePage() {
             const durationMs = performance.now() - sectionStartedAt;
             const resultUrl = proxyWeilaiUrl(result.dataUrl);
             const initialImage = createPendingImage(resultUrl, ratio);
-            const assetId = addGeneratedAsset(initialImage, `${productTitle}-${section.title}`, { product: productInfo.trim(), section: section.title, prompt: section.prompt, model: imageModel, index });
+            const assetMetadata = { product: productInfo.trim(), section: section.title, role: section.role, templateId: section.templateId, variantId: section.variantId, packageType, conversionDriver, visualPreset, targetChannel, targetMarket, copyLocale, prompt: section.prompt, model: imageModel, index };
+            const assetId = addGeneratedAsset(initialImage, `${productTitle}-${section.title}`, assetMetadata);
             const image: CommerceImage = { ...initialImage, assetId };
             const versions = [...section.versions, image];
             const completed = { ...section, status: "success" as const, image, sourceImage: undefined, versions, activeVersionIndex: versions.length - 1, durationMs, error: undefined };
             updateSections((value) => value.map((item) => (item.id === section.id ? completed : item)));
-            localizeGeneratedImage(section.id, image, `${productTitle}-${section.title}`, { product: productInfo.trim(), section: section.title, prompt: section.prompt, model: imageModel, index });
+            localizeGeneratedImage(section.id, image, `${productTitle}-${section.title}`, assetMetadata);
             return completed;
         } catch (error) {
             if (controller.signal.aborted || runId !== runIdRef.current) {
@@ -346,7 +431,7 @@ export default function EcommercePage() {
                 return;
             }
             const title = `${productTitle}-${t("ecommerce.longImage")}`;
-            const metadata = { product: productInfo.trim(), sectionCount: images.length, ratio, preset, width: EXPORT_PRESETS[preset], kind: "detail-long-image" };
+            const metadata = { product: productInfo.trim(), sectionCount: images.length, ratio, preset, width: EXPORT_PRESETS[preset], targetChannel, targetMarket, copyLocale, kind: "detail-long-image" };
             const assetId = previous?.assetId || addGeneratedAsset(stored, title, metadata);
             const nextImage: CommerceImage = { ...stored, assetId, localizationStatus: "success" };
             if (previous?.assetId) updateAsset(previous.assetId, generatedAsset(nextImage, title, metadata));
@@ -389,7 +474,31 @@ export default function EcommercePage() {
                         requestImageQuestion(
                             { ...effectiveConfig, model: textModel },
                             [
-                                { role: "system", content: t("ecommerce.planInstruction", { count: sectionCount, ratio }) },
+                                {
+                                    role: "system",
+                                    content: t(marketMode === "cross-border" ? "ecommerce.planInstruction" : "ecommerce.domesticPlanInstruction", {
+                                        count: sectionCount,
+                                        ratio,
+                                        packageType: t(`ecommerce.packageTypes.${packageType}`),
+                                        packageHint: getPackageSequenceHint(packageType),
+                                        conversionDriver: t(`ecommerce.conversionDrivers.${conversionDriver}`),
+                                        conversionHint: getConversionHint(conversionDriver),
+                                        visualPreset: t(`ecommerce.visualPresets.${visualPreset}`),
+                                        marketBrief,
+                                        domesticPlatform: t(`ecommerce.presets.${exportPreset}`, { width: EXPORT_PRESETS[exportPreset] }),
+                                        templateInstruction:
+                                            templateMode === "auto"
+                                                ? t("ecommerce.templateAutoInstruction", { catalog: getSceneTemplateCatalog() })
+                                                : t("ecommerce.templateManualInstruction", {
+                                                      templateId: selectedSceneTemplate.id,
+                                                      templateName: selectedSceneTemplate.name,
+                                                      variant: selectedSceneTemplate.variants.find(([id]) => id === sceneVariantId)?.[1] || t("ecommerce.variantAuto"),
+                                                  }),
+                                        styleNotes: styleLock.trim() || t("ecommerce.autoStyleLock"),
+                                        proofPoints: proofPoints.trim() || t("ecommerce.noProofPoints"),
+                                        roleLibrary: getSceneRoleLibrary(),
+                                    }),
+                                },
                                 {
                                     role: "user",
                                     content: [
@@ -411,15 +520,29 @@ export default function EcommercePage() {
                 message.warning(t("ecommerce.planFallback"));
             }
             if (!plan) throw new Error(t("ecommerce.planInvalid"));
-            const pending: CommerceSection[] = plan.map((item) => ({
-                ...item,
-                id: nanoid(),
-                status: "pending",
-                versions: [],
-                activeVersionIndex: 0,
-                overlayTitle: item.title,
-                overlayBody: "",
-            }));
+            const pending: CommerceSection[] = plan.map((item) => {
+                const templateId = templateMode === "manual" ? sceneTemplateId : item.templateId;
+                const template = getEcommerceSceneTemplate(templateId);
+                const requestedVariantId = templateMode === "manual" && sceneVariantId ? sceneVariantId : item.variantId;
+                const variantId = template.variants.some(([id]) => id === requestedVariantId) ? requestedVariantId : "";
+                return {
+                    title: item.title,
+                    role: item.role,
+                    templateId,
+                    variantId,
+                    antiAiEnabled,
+                    marketBrief,
+                    directionPrompt: item.prompt,
+                    styleLock: campaignStyleLock,
+                    prompt: buildEcommerceSectionPrompt({ styleLock: campaignStyleLock, role: item.role, templateId, variantId, antiAiEnabled, marketBrief, prompt: item.prompt, productInfo, proofPoints, ratio }),
+                    id: nanoid(),
+                    status: "pending",
+                    versions: [],
+                    activeVersionIndex: 0,
+                    overlayTitle: item.headline || item.title,
+                    overlayBody: item.body,
+                };
+            });
             replaceSections(pending);
             setPhase("generating");
             const partial = await mapWithConcurrency(pending, 2, (item, index) => generateSection(item, index, controller, runId), controller.signal);
@@ -475,7 +598,7 @@ export default function EcommercePage() {
         }
     };
 
-    const retrySection = async (section: CommerceSection, index: number, prompt = section.prompt, sourceImage = section.sourceImage) => {
+    const retrySection = async (section: CommerceSection, index: number, prompt = section.prompt, sourceImage = section.sourceImage, directionPrompt = section.directionPrompt) => {
         if (!ensureReady(false) || running || composing || exporting) return;
         const nextPrompt = prompt.trim();
         if (!nextPrompt) {
@@ -490,9 +613,9 @@ export default function EcommercePage() {
         setPhase("editing");
         setStartedAt(performance.now());
         setElapsedMs(0);
-        updateSections((value) => value.map((item) => (item.id === section.id ? { ...item, prompt: nextPrompt, status: "pending", sourceImage, error: undefined, durationMs: undefined } : item)));
+        updateSections((value) => value.map((item) => (item.id === section.id ? { ...item, prompt: nextPrompt, directionPrompt, status: "pending", sourceImage, error: undefined, durationMs: undefined } : item)));
         try {
-            const result = await generateSection({ ...section, prompt: nextPrompt, status: "pending", sourceImage, error: undefined }, index, controller, runId);
+            const result = await generateSection({ ...section, prompt: nextPrompt, directionPrompt, status: "pending", sourceImage, error: undefined }, index, controller, runId);
             if (runId !== runIdRef.current) return;
             const latest = sectionsRef.current.find((item) => item.id === result.id);
             const current = latest?.image?.assetId === result.image?.assetId ? latest : result;
@@ -521,7 +644,7 @@ export default function EcommercePage() {
 
     const openSectionEditor = (section: CommerceSection) => {
         setEditTargetId(section.id);
-        setEditPrompt(section.prompt);
+        setEditPrompt(section.directionPrompt);
     };
 
     const regenerateEditedSection = () => {
@@ -533,7 +656,9 @@ export default function EcommercePage() {
             return;
         }
         setEditTargetId(null);
-        void retrySection(section, index, editPrompt, section.image);
+        const directionPrompt = editPrompt.trim();
+        const prompt = buildEcommerceSectionPrompt({ styleLock: section.styleLock, role: section.role, templateId: section.templateId, variantId: section.variantId, antiAiEnabled: section.antiAiEnabled, marketBrief: section.marketBrief, prompt: directionPrompt, productInfo, proofPoints, ratio });
+        void retrySection(section, index, prompt, section.image, directionPrompt);
     };
 
     const recompose = (nextSections: CommerceSection[], preset = exportPreset, showOverlay = overlayEnabled) => {
@@ -543,7 +668,7 @@ export default function EcommercePage() {
     const retryLocalization = (section: CommerceSection, index: number) => {
         if (!section.image || section.image.storageKey || section.image.localizationStatus === "pending") return;
         const title = `${productTitle}-${section.title}`;
-        localizeGeneratedImage(section.id, section.image, title, { product: productInfo.trim(), section: section.title, prompt: section.prompt, model: imageModel, index });
+        localizeGeneratedImage(section.id, section.image, title, { product: productInfo.trim(), section: section.title, role: section.role, templateId: section.templateId, variantId: section.variantId, packageType, conversionDriver, visualPreset, targetChannel, targetMarket, copyLocale, prompt: section.prompt, model: imageModel, index });
     };
 
     const moveSection = (index: number, offset: number) => {
@@ -673,6 +798,87 @@ export default function EcommercePage() {
                     <Input.TextArea value={productInfo} onChange={(event) => setProductInfo(event.target.value)} autoSize={{ minRows: 5, maxRows: 10 }} placeholder={t("ecommerce.productInfoPlaceholder")} />
                 </section>
 
+                <section className="mt-5 space-y-3 border-t border-border pt-5">
+                    <div className="text-sm font-medium">{t("ecommerce.creativeStrategy")}</div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <label className="text-sm">
+                            <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.packageType")}</span>
+                            <Select className="w-full" value={packageType} disabled={busy} onChange={(value) => setPackageType(value)} options={ECOMMERCE_PACKAGE_TYPES.map((value) => ({ value, label: t(`ecommerce.packageTypes.${value}`) }))} />
+                        </label>
+                        <label className="text-sm">
+                            <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.conversionDriver")}</span>
+                            <Select className="w-full" value={conversionDriver} disabled={busy} onChange={(value) => setConversionDriver(value)} options={ECOMMERCE_CONVERSION_DRIVERS.map((value) => ({ value, label: t(`ecommerce.conversionDrivers.${value}`) }))} />
+                        </label>
+                    </div>
+                    <label className="block text-sm">
+                        <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.visualPreset")}</span>
+                        <Select className="w-full" value={visualPreset} disabled={busy} onChange={(value) => setVisualPreset(value)} options={ECOMMERCE_VISUAL_PRESETS.map((value) => ({ value, label: t(`ecommerce.visualPresets.${value}`) }))} />
+                    </label>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-xs text-muted-foreground">{t("ecommerce.sceneTemplate")}</span>
+                        <Segmented size="small" value={templateMode} disabled={busy} onChange={(value) => setTemplateMode(String(value) as EcommerceTemplateMode)} options={[{ value: "auto", label: t("ecommerce.templateModes.auto") }, { value: "manual", label: t("ecommerce.templateModes.manual") }]} />
+                    </div>
+                    {templateMode === "manual" ? (
+                        <div className="grid grid-cols-2 gap-3">
+                            <label className="text-sm">
+                                <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.sceneTemplate")}</span>
+                                <Select showSearch optionFilterProp="label" className="w-full" value={sceneTemplateId} disabled={busy} onChange={(value) => { setSceneTemplateId(value); setSceneVariantId(""); }} options={sceneTemplateOptions} />
+                            </label>
+                            <label className="text-sm">
+                                <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.sceneVariant")}</span>
+                                <Select className="w-full" value={sceneVariantId} disabled={busy} onChange={setSceneVariantId} options={[{ value: "", label: t("ecommerce.variantAuto") }, ...selectedSceneTemplate.variants.map(([value, label]) => ({ value, label }))]} />
+                            </label>
+                        </div>
+                    ) : <p className="text-xs leading-5 text-muted-foreground">{t("ecommerce.templateAutoDescription")}</p>}
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-xs text-muted-foreground">{t("ecommerce.antiAiTreatment")}</span>
+                        <Switch size="small" checked={antiAiEnabled} disabled={busy} onChange={setAntiAiEnabled} />
+                    </div>
+                    <label className="block text-sm">
+                        <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.styleLock")}</span>
+                        <Input.TextArea value={styleLock} disabled={busy} onChange={(event) => setStyleLock(event.target.value)} autoSize={{ minRows: 2, maxRows: 5 }} placeholder={t("ecommerce.styleLockPlaceholder")} />
+                    </label>
+                    <label className="block text-sm">
+                        <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.proofPoints")}</span>
+                        <Input.TextArea value={proofPoints} disabled={busy} onChange={(event) => setProofPoints(event.target.value)} autoSize={{ minRows: 2, maxRows: 5 }} placeholder={t("ecommerce.proofPointsPlaceholder")} />
+                    </label>
+                </section>
+
+                <section className="mt-5 space-y-3 border-t border-border pt-5">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="font-medium">{t("ecommerce.marketMode")}</span>
+                        <Segmented size="small" value={marketMode} disabled={busy} onChange={(value) => setMarketMode(String(value) as EcommerceMarketMode)} options={[{ value: "domestic", label: t("ecommerce.marketModes.domestic") }, { value: "cross-border", label: t("ecommerce.marketModes.crossBorder") }]} />
+                    </div>
+                    {marketMode === "cross-border" && <>
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                            <span className="text-xs text-muted-foreground">{t("ecommerce.crossBorderStrategy")}</span>
+                            <span className="flex items-center gap-2 text-xs text-muted-foreground">{t("ecommerce.complianceReview")}<Switch size="small" checked={complianceEnabled} disabled={busy} onChange={setComplianceEnabled} /></span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <label className="text-sm">
+                                <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.targetChannel")}</span>
+                                <Select className="w-full" value={targetChannel} disabled={busy} onChange={setTargetChannel} options={ECOMMERCE_CHANNELS.map((value) => ({ value, label: t(`ecommerce.channels.${value}`) }))} />
+                            </label>
+                            <label className="text-sm">
+                                <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.targetMarket")}</span>
+                                <Select className="w-full" value={targetMarket} disabled={busy} onChange={setTargetMarket} options={ECOMMERCE_MARKETS.map((value) => ({ value, label: t(`ecommerce.markets.${value}`) }))} />
+                            </label>
+                        </div>
+                        <label className="block text-sm">
+                            <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.copyLocale")}</span>
+                            <Select className="w-full" value={copyLocale} disabled={busy} onChange={setCopyLocale} options={ECOMMERCE_COPY_LOCALES.map((value) => ({ value, label: t(`ecommerce.copyLocales.${value}`) }))} />
+                        </label>
+                        <label className="block text-sm">
+                            <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.audienceProfile")}</span>
+                            <Input.TextArea value={audienceProfile} disabled={busy} onChange={(event) => setAudienceProfile(event.target.value)} autoSize={{ minRows: 2, maxRows: 5 }} placeholder={t("ecommerce.audienceProfilePlaceholder")} />
+                        </label>
+                        <label className="block text-sm">
+                            <span className="mb-2 block text-xs text-muted-foreground">{t("ecommerce.offerDetails")}</span>
+                            <Input.TextArea value={offerDetails} disabled={busy} onChange={(event) => setOfferDetails(event.target.value)} autoSize={{ minRows: 2, maxRows: 5 }} placeholder={t("ecommerce.offerDetailsPlaceholder")} />
+                        </label>
+                    </>}
+                </section>
+
                 <section className="mt-5 grid grid-cols-2 gap-3 border-t border-border pt-5">
                     <label className="text-sm">
                         <span className="mb-2 block font-medium">{t("ecommerce.sectionCount")}</span>
@@ -680,7 +886,7 @@ export default function EcommercePage() {
                     </label>
                     <label className="text-sm">
                         <span className="mb-2 block font-medium">{t("ecommerce.ratio")}</span>
-                        <Segmented block value={ratio} disabled={busy} onChange={(value) => changeRatio(String(value))} options={["3:4", "9:16"]} />
+                        <Segmented block value={ratio} disabled={busy} onChange={(value) => changeRatio(String(value))} options={["1:1", "2:3", "3:4", "9:16"]} />
                     </label>
                 </section>
 
@@ -749,7 +955,7 @@ export default function EcommercePage() {
                                     <div className="flex items-start justify-between gap-3 border-b border-border px-3 py-2.5">
                                         <div className="min-w-0">
                                             <div className="truncate text-sm font-medium">{index + 1}. {section.title}</div>
-                                            <div className="mt-0.5 truncate text-xs text-muted-foreground">{section.durationMs === undefined ? t("ecommerce.waiting") : formatDuration(section.durationMs)}</div>
+                                            <div className="mt-0.5 truncate text-xs text-muted-foreground">{t(`ecommerce.sceneRoles.${section.role}`)} · {getSceneTemplateLabel(section.templateId, section.variantId)} · {section.durationMs === undefined ? t("ecommerce.waiting") : formatDuration(section.durationMs)}</div>
                                         </div>
                                         <div className="flex shrink-0 items-center">
                                             <Tooltip title={t("ecommerce.moveUp")}><Button type="text" size="small" disabled={index === 0 || busy} icon={<ArrowUp className="size-3.5" />} onClick={() => moveSection(index, -1)} aria-label={t("ecommerce.moveUp")} /></Tooltip>
